@@ -25,3 +25,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Dados importados
+imports/*.csv
+imports/*.xlsx

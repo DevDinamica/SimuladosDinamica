@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "core",
     "institutions",
     "accounts",
+    "academics",
 ]
 
 MIDDLEWARE = [
