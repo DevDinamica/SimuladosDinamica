@@ -22,6 +22,9 @@ class AcademicYearAdmin(admin.ModelAdmin):
         "is_current",
         "is_active",
     )
+    search_fields = (
+        "=year",
+    )
     ordering = (
         "-year",
     )
@@ -82,6 +85,10 @@ class SubjectAdmin(admin.ModelAdmin):
     )
     list_filter = (
         "is_active",
+    )
+    search_fields = (
+        "name",
+        "code",
     )
     search_fields = (
         "name",
