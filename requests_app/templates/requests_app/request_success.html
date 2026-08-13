@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Solicitação recebida | Dinâmica Simulados
+{% endblock %}
+
+{% block content %}
+<section class="success-card">
+    <div class="success-icon">✓</div>
+
+    <p class="eyebrow">Solicitação recebida</p>
+
+    <h1>
+        O planejamento do simulado foi registrado.
+    </h1>
+
+    <p>
+        A equipe da Editora Dinâmica analisará as informações
+        enviadas e entrará em contato pelo e-mail
+        <strong>{{ simulation_request.requester_email }}</strong>.
+    </p>
+
+    <div class="protocol">
+        <span>Protocolo da solicitação</span>
+        <strong>{{ simulation_request.protocol }}</strong>
+    </div>
+
+    <h2>Próximas etapas</h2>
+
+    <ol>
+        <li>
+            A Editora verificará o escopo, as datas e a operação.
+        </li>
+
+        <li>
+            O responsável receberá orientações sobre a preparação.
+        </li>
+
+        <li>
+            Será disponibilizado o modelo oficial de planilha.
+        </li>
+
+        <li>
+            A lista será validada antes da criação das aplicações.
+        </li>
+
+        <li>
+            As provas e cartões-resposta serão preparados.
+        </li>
+    </ol>
+
+    <div class="warning">
+        <strong>Não envie dados de alunos por esta página.</strong>
+
+        A lista nominal deverá conter apenas os dados necessários e
+        será recebida posteriormente pelo canal indicado pela Editora.
+    </div>
+
+    <h2>Dados que poderão ser solicitados</h2>
+
+    <ul>
+        <li>Município e escola;</li>
+        <li>Código INEP;</li>
+        <li>Série, turma e turno;</li>
+        <li>Matrícula institucional;</li>
+        <li>Nome do estudante.</li>
+    </ul>
+
+    <p>
+        Guarde o protocolo para qualquer comunicação sobre esta
+        solicitação.
+    </p>
+</section>
+{% endblock %}

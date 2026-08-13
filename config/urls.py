@@ -27,6 +27,10 @@ admin.site.index_title = "Administração"
 
 urlpatterns = [
     path("", include("core.urls")),
+    path(
+        "solicitar/",
+        include("requests_app.urls"),
+    ),
     path("admin/", admin.site.urls),
 ]
 

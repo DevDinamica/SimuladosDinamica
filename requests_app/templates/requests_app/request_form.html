@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Solicitar Simulado | Dinâmica Simulados
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Solicitação institucional</p>
+
+        <h1>Leve um Simulado Dinâmica para sua rede ou escola.</h1>
+
+        <p>
+            Envie as informações iniciais da aplicação. Nossa equipe
+            analisará a solicitação e orientará as próximas etapas.
+        </p>
+    </div>
+
+    <div class="hero-note">
+        <strong>Importante</strong>
+
+        Nesta etapa, não envie nomes, matrículas ou documentos de
+        estudantes. Os dados acadêmicos serão solicitados posteriormente
+        por um canal específico.
+    </div>
+</section>
+
+<div class="content-grid">
+    <form method="post" class="form-card" novalidate>
+        {% csrf_token %}
+        {{ form.website }}
+
+        {% if form.non_field_errors %}
+            <div class="non-field-errors">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <section class="form-section">
+            <h2>1. Responsável pela solicitação</h2>
+
+            <p class="section-description">
+                Informe quem poderá acompanhar a preparação do simulado.
+            </p>
+
+            <div class="form-grid">
+                {% include "requests_app/field.html" with field=form.requester_name %}
+                {% include "requests_app/field.html" with field=form.requester_role %}
+                {% include "requests_app/field.html" with field=form.requester_email %}
+                {% include "requests_app/field.html" with field=form.requester_phone %}
+                {% include "requests_app/field.html" with field=form.requester_institution full=True %}
+            </div>
+        </section>
+
+        <section class="form-section">
+            <h2>2. Instituição e abrangência</h2>
+
+            <p class="section-description">
+                Identifique onde e para quem a avaliação será aplicada.
+            </p>
+
+            <div class="form-grid">
+                {% include "requests_app/field.html" with field=form.state %}
+                {% include "requests_app/field.html" with field=form.municipality_name %}
+                {% include "requests_app/field.html" with field=form.request_scope %}
+                {% include "requests_app/field.html" with field=form.education_department_name %}
+                {% include "requests_app/field.html" with field=form.school_name %}
+                {% include "requests_app/field.html" with field=form.school_inep_code %}
+            </div>
+        </section>
+
+        <section class="form-section">
+            <h2>3. Planejamento do simulado</h2>
+
+            <p class="section-description">
+                As quantidades podem ser estimadas nesta primeira etapa.
+            </p>
+
+            <div class="form-grid">
+                {% include "requests_app/field.html" with field=form.preferred_date %}
+                {% include "requests_app/field.html" with field=form.alternative_date %}
+                {% include "requests_app/field.html" with field=form.academic_year %}
+                {% include "requests_app/field.html" with field=form.estimated_question_count %}
+                {% include "requests_app/field.html" with field=form.estimated_school_count %}
+                {% include "requests_app/field.html" with field=form.estimated_classroom_count %}
+                {% include "requests_app/field.html" with field=form.estimated_student_count full=True %}
+            </div>
+        </section>
+
+        <section class="form-section">
+            <h2>4. Séries e disciplinas</h2>
+
+            <div class="form-grid">
+                <div class="form-field">
+                    <label>{{ form.grades.label }}</label>
+
+                    <div class="checkbox-list">
+                        {{ form.grades }}
+                    </div>
+
+                    {{ form.grades.errors }}
+                </div>
+
+                <div class="form-field">
+                    <label>{{ form.subjects.label }}</label>
+
+                    <div class="checkbox-list">
+                        {{ form.subjects }}
+                    </div>
+
+                    {{ form.subjects.errors }}
+                </div>
+            </div>
+        </section>
+
+        <section class="form-section">
+            <h2>5. Objetivo e operação</h2>
+
+            <div class="form-grid">
+                {% include "requests_app/field.html" with field=form.objective %}
+                {% include "requests_app/field.html" with field=form.objective_details %}
+                {% include "requests_app/field.html" with field=form.assessment_source %}
+                {% include "requests_app/field.html" with field=form.print_responsibility %}
+                {% include "requests_app/field.html" with field=form.applicator_responsibility %}
+                {% include "requests_app/field.html" with field=form.internet_quality %}
+
+                <div class="form-field full">
+                    <div class="privacy-box">
+                        <label>
+                            {{ form.has_scanning_devices }}
+                            <span>
+                                {{ form.has_scanning_devices.label }}
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                {% include "requests_app/field.html" with field=form.notes full=True %}
+            </div>
+        </section>
+
+        <section class="form-section">
+            <h2>6. Confirmação institucional</h2>
+
+            <div class="privacy-box">
+                <label>
+                    {{ form.privacy_accepted }}
+
+                    <span>
+                        {{ form.privacy_accepted.help_text }}
+                    </span>
+                </label>
+
+                {{ form.privacy_accepted.errors }}
+            </div>
+        </section>
+
+        <div class="form-actions">
+            <button type="submit" class="button">
+                Enviar solicitação
+            </button>
+        </div>
+    </form>
+
+    <aside class="info-card">
+        <h2>Como funciona?</h2>
+
+        <ol>
+            <li>Envie a solicitação institucional.</li>
+            <li>A Editora analisará o escopo e as datas.</li>
+            <li>Você receberá as instruções da operação.</li>
+            <li>Os dados serão enviados por canal seguro.</li>
+            <li>A aplicação e os cartões serão preparados.</li>
+        </ol>
+
+        <h3>Separe previamente</h3>
+
+        <ul>
+            <li>Estimativa de alunos;</li>
+            <li>Escolas e turmas participantes;</li>
+            <li>Séries e disciplinas;</li>
+            <li>Datas pretendidas;</li>
+            <li>Responsáveis pela aplicação.</li>
+        </ul>
+    </aside>
+</div>
+{% endblock %}
