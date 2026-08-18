@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "assessments",
     "requests_app",
     "applications",
+    "data_portal",
 ]
 
 MIDDLEWARE = [

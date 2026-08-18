@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}
+    Preparação dos dados | Dinâmica Simulados
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Portal institucional</p>
+
+        <h1>Preparação dos dados do simulado</h1>
+
+        <p>
+            {{ portal.application.title }}
+        </p>
+    </div>
+
+    <div class="hero-note">
+        <strong>
+            {{ portal.application.code }}
+        </strong>
+
+        Município:
+        {{ portal.application.municipality }}<br>
+
+        Aplicação:
+        {{ portal.application.application_date|date:"d/m/Y" }}<br>
+
+        Válido até:
+        {{ portal.expires_at|date:"d/m/Y H:i" }}
+    </div>
+</section>
+
+<div class="content-grid">
+    <section class="form-card">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="portal-message">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="portal-step">
+            <span>1</span>
+
+            <div>
+                <h2>Baixe o modelo oficial</h2>
+
+                <p>
+                    O arquivo contém as abas ESCOLAS, TURMAS e
+                    ALUNOS, além das instruções de preenchimento.
+                </p>
+
+                <a
+                    class="button"
+                    href="{% url 'data_portal:download_template' portal.token %}"
+                >
+                    Baixar modelo Excel
+                </a>
+            </div>
+        </div>
+
+        <div class="portal-step">
+            <span>2</span>
+
+            <div>
+                <h2>Preencha a planilha</h2>
+
+                <p>
+                    Não altere o nome das abas ou das colunas.
+                    Não inclua CPF, endereço ou telefone do aluno.
+                </p>
+            </div>
+        </div>
+
+        <div class="portal-step">
+            <span>3</span>
+
+            <div>
+                <h2>Envie para validação</h2>
+
+                <form
+                    method="post"
+                    enctype="multipart/form-data"
+                    action="{% url 'data_portal:upload' portal.token %}"
+                >
+                    {% csrf_token %}
+                    {{ form.as_p }}
+
+                    <button class="button" type="submit">
+                        Validar planilha
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {% if upload %}
+            <div class="validation-summary">
+                <h2>Resultado da validação</h2>
+
+                <div class="summary-grid">
+                    <div>
+                        <strong>{{ upload.school_count }}</strong>
+                        <span>Escolas</span>
+                    </div>
+
+                    <div>
+                        <strong>{{ upload.classroom_count }}</strong>
+                        <span>Turmas</span>
+                    </div>
+
+                    <div>
+                        <strong>{{ upload.student_count }}</strong>
+                        <span>Alunos</span>
+                    </div>
+
+                    <div>
+                        <strong>{{ upload.error_count }}</strong>
+                        <span>Erros</span>
+                    </div>
+                </div>
+
+                {% if upload.validation_report.errors %}
+                    <h3>Pendências encontradas</h3>
+
+                    <ul class="validation-errors">
+                        {% for error in upload.validation_report.errors %}
+                            <li>
+                                <strong>{{ error.sheet }}</strong>
+
+                                {% if error.row %}
+                                    — linha {{ error.row }}
+                                {% endif %}
+
+                                — {{ error.message }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+
+                    <p>
+                        Corrija o arquivo e envie novamente.
+                    </p>
+                {% else %}
+                    <div class="validation-success">
+                        A planilha foi validada e está pronta
+                        para ser enviada à Editora.
+                    </div>
+
+                    {% if portal.status != "SUBMITTED" %}
+                        <form
+                            method="post"
+                            action="{% url 'data_portal:submit' portal.token %}"
+                        >
+                            {% csrf_token %}
+
+                            <button class="button" type="submit">
+                                Confirmar e enviar para revisão
+                            </button>
+                        </form>
+                    {% else %}
+                        <p>
+                            <strong>
+                                Dados enviados para revisão.
+                            </strong>
+                        </p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        {% endif %}
+    </section>
+
+    <aside class="info-card">
+        <h2>Dados necessários</h2>
+
+        <ul>
+            <li>Escolas participantes;</li>
+            <li>Código INEP, quando disponível;</li>
+            <li>Séries, turmas e turnos;</li>
+            <li>Matrícula institucional;</li>
+            <li>Nome completo do aluno;</li>
+            <li>Necessidades operacionais.</li>
+        </ul>
+
+        <h3>Não envie</h3>
+
+        <ul>
+            <li>CPF;</li>
+            <li>Endereço do aluno;</li>
+            <li>Telefone pessoal;</li>
+            <li>Dados médicos detalhados;</li>
+            <li>Documentos digitalizados.</li>
+        </ul>
+    </aside>
+</div>
+{% endblock %}

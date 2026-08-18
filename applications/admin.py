@@ -9,6 +9,7 @@ from .models import (
     SimulationApplication,
 )
 from .services import generate_application_participations
+from data_portal.models import DataPreparationPortal
 
 class ApplicationClassroomInlineFormSet(
     forms.models.BaseInlineFormSet
@@ -91,6 +92,12 @@ class ApplicationClassroomInline(admin.TabularInline):
 
 @admin.register(SimulationApplication)
 class SimulationApplicationAdmin(admin.ModelAdmin):
+    actions = (
+        "create_data_portal",
+        "generate_participations",
+        "mark_as_preparing",
+        "mark_as_ready",
+    )
     list_display = (
         "code",
         "title",
@@ -207,6 +214,50 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
                     distinct=True,
                 ),
             )
+        )
+
+    @admin.action(description="Criar portal de preparação dos dados")
+    def create_data_portal(self, request, queryset):
+        created_count = 0
+        existing_count = 0
+
+        for application in queryset:
+            simulation_request = (
+                application.simulation_request
+            )
+
+            if simulation_request:
+                contact_name = (
+                    simulation_request.requester_name
+                )
+                contact_email = (
+                    simulation_request.requester_email
+                )
+            else:
+                contact_name = "Responsável institucional"
+                contact_email = "responsavel@exemplo.com"
+
+            _, created = (
+                DataPreparationPortal.objects.get_or_create(
+                    application=application,
+                    defaults={
+                        "contact_name": contact_name,
+                        "contact_email": contact_email,
+                    },
+                )
+            )
+
+            if created:
+                created_count += 1
+            else:
+                existing_count += 1
+
+        self.message_user(
+            request,
+            (
+                f"{created_count} portal(is) criado(s); "
+                f"{existing_count} já existia(m)."
+            ),
         )
 
     @admin.display(description="Turmas")

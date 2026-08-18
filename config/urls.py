@@ -31,6 +31,10 @@ urlpatterns = [
         "solicitar/",
         include("requests_app.urls"),
     ),
+    path(
+        "data-portal/",
+        include("data_portal.urls"),
+    ),
     path("admin/", admin.site.urls),
 ]
 
