@@ -1,7 +1,24 @@
 from django.contrib import admin
 
 from .forms import AssessmentAdminForm
-from .models import Assessment, AssessmentVersion, Question
+from .models import Assessment, AssessmentComponent, AssessmentVersion, Question
+
+class AssessmentComponentInline(admin.TabularInline):
+    model = AssessmentComponent
+    extra = 0
+    fields = (
+        "order",
+        "subject",
+        "code",
+        "title",
+        "start_question",
+        "end_question",
+        "is_active",
+    )
+    autocomplete_fields = (
+        "subject",
+    )
+    show_change_link = True
 
 class AssessmentVersionInline(admin.TabularInline):
     model = AssessmentVersion
@@ -23,7 +40,7 @@ class AssessmentAdmin(admin.ModelAdmin):
     list_display = (
         "title",
         "code",
-        "subject",
+        "subjects_display",
         "academic_year",
         "status",
         "get_version_count",
@@ -33,6 +50,7 @@ class AssessmentAdmin(admin.ModelAdmin):
         "status",
         "academic_year",
         "subject",
+        "components__subject",
         "grades",
     )
     search_fields = (
@@ -53,6 +71,7 @@ class AssessmentAdmin(admin.ModelAdmin):
     )
     inlines = (
         AssessmentVersionInline,
+        AssessmentComponentInline,
     )
 
     fieldsets = (
@@ -94,12 +113,17 @@ class AssessmentAdmin(admin.ModelAdmin):
     def get_version_count(self, obj):
         return obj.version_count
 
+    @admin.display(description="Componentes")
+    def subjects_display(self, obj):
+        return obj.subject_names
+
 
 class QuestionInline(admin.TabularInline):
     model = Question
     extra = 0
     fields = (
         "number",
+        "component",
         "correct_answer",
         "weight",
         "descriptor_code",
@@ -155,12 +179,50 @@ class AssessmentVersionAdmin(admin.ModelAdmin):
     def answer_key_status(self, obj):
         return obj.is_answer_key_complete
 
+@admin.register(AssessmentComponent)
+class AssessmentComponentAdmin(admin.ModelAdmin):
+    list_display = (
+        "assessment",
+        "title",
+        "subject",
+        "start_question",
+        "end_question",
+        "question_count_display",
+        "order",
+        "is_active",
+    )
+    list_filter = (
+        "subject",
+        "is_active",
+        "assessment__academic_year",
+    )
+    search_fields = (
+        "assessment__title",
+        "assessment__code",
+        "title",
+        "code",
+        "subject__name",
+    )
+    autocomplete_fields = (
+        "assessment",
+        "subject",
+    )
+
+    @admin.display(description="Questões")
+    def question_count_display(self, obj):
+        return obj.question_count
+
+    def save_model(self, request, obj, form, change):
+        obj.full_clean()
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
     list_display = (
         "version",
         "number",
+        "component",
         "correct_answer",
         "weight",
         "descriptor_code",
@@ -169,6 +231,7 @@ class QuestionAdmin(admin.ModelAdmin):
     list_filter = (
         "version__assessment",
         "version",
+        "component__subject",
         "correct_answer",
         "is_active",
     )
@@ -181,6 +244,7 @@ class QuestionAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = (
         "version",
+        "component",
     )
     ordering = (
         "version",

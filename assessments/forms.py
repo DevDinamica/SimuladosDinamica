@@ -9,35 +9,77 @@ class AssessmentAdminForm(forms.ModelForm):
         model = Assessment
         fields = "__all__"
 
-    def clean(self):
-        cleaned_data = super().clean()
-        status = cleaned_data.get("status")
+def clean(self):
+    cleaned_data = super().clean()
+    status = cleaned_data.get("status")
 
-        if (
-            self.instance.pk
-            and status == Assessment.Status.PUBLISHED
-        ):
-            versions = self.instance.versions.filter(
-                is_active=True,
+    if (
+        self.instance.pk
+        and status == Assessment.Status.PUBLISHED
+    ):
+        assessment = self.instance
+
+        versions = assessment.versions.filter(
+            is_active=True,
+        )
+
+        if not versions.exists():
+            raise ValidationError(
+                "Cadastre pelo menos uma versão antes de publicar."
             )
 
-            if not versions.exists():
+        if not assessment.subject_id:
+            if not assessment.components.filter(
+                is_active=True,
+            ).exists():
                 raise ValidationError(
-                    "Cadastre pelo menos uma versão antes de publicar."
+                    "Informe uma disciplina principal ou cadastre "
+                    "os componentes curriculares da prova."
                 )
 
-            incomplete_versions = [
-                version.code
-                for version in versions
-                if not version.is_answer_key_complete
-            ]
+        incomplete_versions = [
+            version.code
+            for version in versions
+            if not version.is_answer_key_complete
+        ]
 
-            if incomplete_versions:
-                codes = ", ".join(incomplete_versions)
+        if incomplete_versions:
+            codes = ", ".join(incomplete_versions)
 
-                raise ValidationError(
-                    "Os gabaritos das seguintes versões estão "
-                    f"incompletos: {codes}."
+            raise ValidationError(
+                "Os gabaritos das seguintes versões estão "
+                f"incompletos: {codes}."
+            )
+
+        if assessment.components.filter(
+            is_active=True,
+        ).exists():
+            questions_without_component = (
+                assessment.versions.filter(
+                    is_active=True,
+                    questions__component__isnull=True,
+                )
+                .values_list(
+                    "questions__number",
+                    flat=True,
+                )
+                .distinct()
+                .order_by("questions__number")
+            )
+
+            missing_numbers = list(
+                questions_without_component
+            )
+
+            if missing_numbers:
+                numbers = ", ".join(
+                    str(number)
+                    for number in missing_numbers
                 )
 
-        return cleaned_data
+                raise ValidationError(
+                    "As seguintes questões não possuem componente "
+                    f"curricular: {numbers}."
+                )
+
+    return cleaned_data

@@ -35,9 +35,15 @@ class Assessment(models.Model):
     )
     subject = models.ForeignKey(
         Subject,
-        verbose_name="disciplina",
+        verbose_name="disciplina principal",
         on_delete=models.PROTECT,
         related_name="assessments",
+        null=True,
+        blank=True,
+        help_text=(
+            "Utilizado em provas de uma única disciplina. "
+            "Para simulados multidisciplinares, use os componentes."
+        ),
     )
     grades = models.ManyToManyField(
         Grade,
@@ -77,8 +83,133 @@ class Assessment(models.Model):
     def version_count(self):
         return self.versions.count()
 
+    @property
+    def subject_count(self):
+        if self.components.exists():
+            return (
+                self.components.filter(is_active=True)
+                .values("subject_id")
+                .distinct()
+                .count()
+            )
+
+        return 1 if self.subject_id else 0
+
+
+    @property
+    def subject_names(self):
+        if self.components.exists():
+            return ", ".join(
+                self.components.filter(is_active=True)
+                .order_by("order")
+                .values_list("subject__name", flat=True)
+            )
+
+        if self.subject_id:
+            return self.subject.name
+
+        return "Sem disciplina"
+
     def __str__(self):
         return f"{self.title} — {self.academic_year}"
+
+class AssessmentComponent(models.Model):
+    assessment = models.ForeignKey(
+        Assessment,
+        verbose_name="prova",
+        on_delete=models.CASCADE,
+        related_name="components",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        verbose_name="disciplina",
+        on_delete=models.PROTECT,
+        related_name="assessment_components",
+    )
+    code = models.CharField(
+        "código",
+        max_length=30,
+        help_text="Exemplo: PORT ou MAT.",
+    )
+    title = models.CharField(
+        "título",
+        max_length=150,
+        help_text="Exemplo: Língua Portuguesa.",
+    )
+    start_question = models.PositiveSmallIntegerField(
+        "questão inicial",
+        validators=[MinValueValidator(1)],
+    )
+    end_question = models.PositiveSmallIntegerField(
+        "questão final",
+        validators=[MinValueValidator(1)],
+    )
+    order = models.PositiveSmallIntegerField(
+        "ordem",
+        default=1,
+    )
+    is_active = models.BooleanField(
+        "ativo",
+        default=True,
+    )
+
+    class Meta:
+        verbose_name = "componente da prova"
+        verbose_name_plural = "componentes da prova"
+        ordering = ["assessment", "order", "start_question"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assessment", "code"],
+                name="unique_component_code_by_assessment",
+            ),
+            models.UniqueConstraint(
+                fields=["assessment", "order"],
+                name="unique_component_order_by_assessment",
+            ),
+        ]
+
+    def clean(self):
+        self.code = self.code.strip().upper()
+
+        if self.end_question < self.start_question:
+            raise ValidationError(
+                {
+                    "end_question": (
+                        "A questão final não pode ser anterior "
+                        "à questão inicial."
+                    )
+                }
+            )
+
+        if self.assessment_id:
+            overlapping_components = (
+                AssessmentComponent.objects.filter(
+                    assessment_id=self.assessment_id,
+                    start_question__lte=self.end_question,
+                    end_question__gte=self.start_question,
+                )
+            )
+
+            if self.pk:
+                overlapping_components = (
+                    overlapping_components.exclude(pk=self.pk)
+                )
+
+            if overlapping_components.exists():
+                raise ValidationError(
+                    "O intervalo deste componente coincide com "
+                    "outro componente da mesma prova."
+                )
+
+    @property
+    def question_count(self):
+        return self.end_question - self.start_question + 1
+
+    def __str__(self):
+        return (
+            f"{self.assessment.title} — {self.title} "
+            f"({self.start_question}–{self.end_question})"
+        )
 
 
 class AssessmentVersion(models.Model):
@@ -183,6 +314,14 @@ class Question(models.Model):
         on_delete=models.CASCADE,
         related_name="questions",
     )
+    component = models.ForeignKey(
+        AssessmentComponent,
+        verbose_name="componente curricular",
+        on_delete=models.PROTECT,
+        related_name="questions",
+        null=True,
+        blank=True,
+    )
     number = models.PositiveSmallIntegerField(
         "número",
         validators=[MinValueValidator(1)],
@@ -208,6 +347,11 @@ class Question(models.Model):
         "resposta correta",
         max_length=1,
         choices=Answer.choices,
+        blank=True,
+        help_text=(
+            "Pode permanecer vazia enquanto o gabarito estiver "
+            "aguardando confirmação pedagógica."
+        ),
     )
     weight = models.DecimalField(
         "peso",
@@ -232,28 +376,61 @@ class Question(models.Model):
             )
         ]
 
-    def clean(self):
-        if not self.version_id:
-            return
+def clean(self):
+    if not self.version_id:
+        return
 
-        if self.number > self.version.question_count:
+    if self.number > self.version.question_count:
+        raise ValidationError(
+            {
+                "number": (
+                    "O número da questão não pode ultrapassar "
+                    "a quantidade definida na versão."
+                )
+            }
+        )
+
+    allowed_answers = list("ABCDE")[
+        : self.version.option_count
+    ]
+
+    if (
+        self.correct_answer
+        and self.correct_answer not in allowed_answers
+    ):
+        raise ValidationError(
+            {
+                "correct_answer": (
+                    "Essa alternativa não existe na configuração "
+                    "desta versão."
+                )
+            }
+        )
+
+    if self.component_id:
+        if (
+            self.component.assessment_id
+            != self.version.assessment_id
+        ):
             raise ValidationError(
                 {
-                    "number": (
-                        "O número da questão não pode ultrapassar "
-                        "a quantidade definida na versão."
+                    "component": (
+                        "O componente precisa pertencer à mesma "
+                        "prova da versão."
                     )
                 }
             )
 
-        allowed_answers = list("ABCDE")[: self.version.option_count]
-
-        if self.correct_answer not in allowed_answers:
+        if not (
+            self.component.start_question
+            <= self.number
+            <= self.component.end_question
+        ):
             raise ValidationError(
                 {
-                    "correct_answer": (
-                        "Essa alternativa não existe na configuração "
-                        "desta versão."
+                    "component": (
+                        "O número da questão está fora do intervalo "
+                        "definido para este componente."
                     )
                 }
             )

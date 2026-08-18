@@ -106,6 +106,7 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
         "municipality",
         "application_date",
         "assessment__subject",
+        "assessment__components__subject",
         "assessment__academic_year",
     )
     search_fields = (
