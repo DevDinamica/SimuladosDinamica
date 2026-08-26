@@ -565,3 +565,184 @@ def process_answer_sheet(
     )
 
     return answer_sheet
+
+
+@transaction.atomic
+def validate_answer_sheet(
+    answer_sheet,
+    user=None,
+):
+    answer_sheet = (
+        AnswerSheet.objects.select_for_update()
+        .select_related(
+            "participation",
+            "participation__assessment_version",
+        )
+        .get(pk=answer_sheet.pk)
+    )
+
+    participation = answer_sheet.participation
+    validate_participation(participation)
+
+    version = participation.assessment_version
+
+    questions = list(
+        version.questions.filter(
+            is_active=True,
+        ).order_by("number")
+    )
+
+    answers = list(
+        answer_sheet.answers.select_related(
+            "question",
+            "question__version",
+        ).order_by("question__number")
+    )
+
+    if len(questions) != version.question_count:
+        raise ValidationError(
+            (
+                f"A versão {version.code} espera "
+                f"{version.question_count} questões, mas possui "
+                f"{len(questions)} questões ativas."
+            )
+        )
+
+    if len(answers) != len(questions):
+        raise ValidationError(
+            (
+                f"O cartão possui {len(answers)} respostas, "
+                f"mas deveria possuir {len(questions)}."
+            )
+        )
+
+    expected_question_ids = {
+        question.pk
+        for question in questions
+    }
+    answer_question_ids = {
+        answer.question_id
+        for answer in answers
+    }
+
+    if answer_question_ids != expected_question_ids:
+        raise ValidationError(
+            "As respostas não correspondem exatamente às "
+            "questões da versão atribuída."
+        )
+
+    for answer in answers:
+        answer.full_clean()
+
+    now = timezone.now()
+    actor = get_actor(user)
+
+    answer_sheet.status = AnswerSheet.Status.VALIDATED
+    answer_sheet.validated_by = actor
+    answer_sheet.validated_at = now
+    answer_sheet.processing_message = (
+        "Lançamento validado e pronto para correção."
+    )
+
+    if not answer_sheet.entered_at:
+        answer_sheet.entered_at = now
+
+    if not answer_sheet.entered_by_id:
+        answer_sheet.entered_by = actor
+
+    answer_sheet.save(
+        update_fields=[
+            "status",
+            "validated_by",
+            "validated_at",
+            "processing_message",
+            "entered_by",
+            "entered_at",
+            "updated_at",
+        ]
+    )
+
+    participation.status = (
+        Participation.Status.ANSWER_SHEET_RECEIVED
+    )
+    participation.save(
+        update_fields=[
+            "status",
+            "updated_at",
+        ]
+    )
+
+    return answer_sheet
+
+
+@transaction.atomic
+def reopen_answer_sheet(
+    answer_sheet,
+):
+    answer_sheet = (
+        AnswerSheet.objects.select_for_update()
+        .select_related(
+            "participation",
+        )
+        .get(pk=answer_sheet.pk)
+    )
+
+    if answer_sheet.status != AnswerSheet.Status.PROCESSED:
+        raise ValidationError(
+            "Somente cartões processados podem ser reabertos."
+        )
+
+    answer_sheet.answers.update(
+        is_correct=None,
+        awarded_score=ZERO,
+    )
+
+    answer_sheet.breakdowns.all().delete()
+
+    answer_sheet.status = AnswerSheet.Status.DRAFT
+    answer_sheet.answered_count = 0
+    answer_sheet.blank_count = 0
+    answer_sheet.multiple_count = 0
+    answer_sheet.correct_count = 0
+    answer_sheet.incorrect_count = 0
+    answer_sheet.score = ZERO
+    answer_sheet.percentage = ZERO
+    answer_sheet.validated_by = None
+    answer_sheet.validated_at = None
+    answer_sheet.processed_by = None
+    answer_sheet.processed_at = None
+    answer_sheet.processing_message = (
+        "Cartão reaberto para revisão."
+    )
+
+    answer_sheet.save(
+        update_fields=[
+            "status",
+            "answered_count",
+            "blank_count",
+            "multiple_count",
+            "correct_count",
+            "incorrect_count",
+            "score",
+            "percentage",
+            "validated_by",
+            "validated_at",
+            "processed_by",
+            "processed_at",
+            "processing_message",
+            "updated_at",
+        ]
+    )
+
+    participation = answer_sheet.participation
+    participation.status = (
+        Participation.Status.ANSWER_SHEET_RECEIVED
+    )
+    participation.save(
+        update_fields=[
+            "status",
+            "updated_at",
+        ]
+    )
+
+    return answer_sheet

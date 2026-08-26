@@ -11,6 +11,26 @@ from .models import (
 from .services import generate_application_participations
 from data_portal.models import DataPreparationPortal
 
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.html import format_html
+
+from .correction import (
+    initialize_answer_sheet,
+    process_answer_sheet,
+    reopen_answer_sheet,
+    validate_answer_sheet,
+)
+
+from .models import (
+    AnswerEntry,
+    AnswerSheet,
+    AnswerSheetBreakdown,
+    ApplicationClassroom,
+    Participation,
+    SimulationApplication,
+)
+
 class ApplicationClassroomInlineFormSet(
     forms.models.BaseInlineFormSet
 ):
@@ -143,7 +163,9 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
     date_hierarchy = "application_date"
     save_on_top = True
     actions = (
+        "create_data_portal",
         "generate_participations",
+        "export_answer_sheets",
         "mark_as_preparing",
         "mark_as_ready",
     )
@@ -405,6 +427,459 @@ class ApplicationClassroomAdmin(admin.ModelAdmin):
         return obj.applicators.count()
 
 
+class AnswerEntryInline(admin.TabularInline):
+    model = AnswerEntry
+    extra = 0
+    can_delete = False
+    fields = (
+        "question_number",
+        "descriptor_display",
+        "marking_status",
+        "selected_answer",
+        "correct_display",
+        "awarded_score",
+    )
+    readonly_fields = (
+        "question_number",
+        "descriptor_display",
+        "correct_display",
+        "awarded_score",
+    )
+    ordering = (
+        "question__number",
+    )
+
+    @admin.display(description="Questão")
+    def question_number(self, obj):
+        if not obj.pk:
+            return "—"
+
+        return obj.question.number
+
+    @admin.display(description="Descritor")
+    def descriptor_display(self, obj):
+        if not obj.pk:
+            return "—"
+
+        if obj.question.descriptor_code:
+            return (
+                f"{obj.question.descriptor_code} — "
+                f"{obj.question.descriptor}"
+            )
+
+        return "Sem descritor"
+
+    @admin.display(description="Resultado")
+    def correct_display(self, obj):
+        if not obj.pk or obj.is_correct is None:
+            return "Aguardando correção"
+
+        if obj.is_correct:
+            return "Correta"
+
+        return "Incorreta"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        if (
+            obj
+            and obj.status == AnswerSheet.Status.PROCESSED
+        ):
+            return False
+
+        return super().has_change_permission(
+            request,
+            obj,
+        )
+
+
+class AnswerSheetBreakdownInline(admin.TabularInline):
+    model = AnswerSheetBreakdown
+    extra = 0
+    can_delete = False
+    fields = (
+        "dimension",
+        "key",
+        "label",
+        "question_count",
+        "correct_count",
+        "incorrect_count",
+        "blank_count",
+        "multiple_count",
+        "score",
+        "maximum_score",
+        "percentage",
+    )
+    readonly_fields = fields
+    ordering = (
+        "dimension",
+        "key",
+    )
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+@admin.register(AnswerSheet)
+class AnswerSheetAdmin(admin.ModelAdmin):
+    list_display = (
+        "sequence_display",
+        "student_display",
+        "application_display",
+        "version_display",
+        "status",
+        "correct_count",
+        "incorrect_count",
+        "blank_count",
+        "multiple_count",
+        "score",
+        "percentage_display",
+    )
+    list_filter = (
+        "status",
+        "input_method",
+        "participation__application",
+        (
+            "participation__application_classroom__"
+            "classroom__school"
+        ),
+        "participation__assessment_version",
+    )
+    search_fields = (
+        "participation__student__full_name",
+        "participation__student__registration_code",
+        "participation__application__code",
+        "participation__card_code",
+    )
+    readonly_fields = (
+        "participation",
+        "status",
+        "input_method",
+        "student_summary",
+        "application_summary",
+        "version_summary",
+        "question_count",
+        "answered_count",
+        "blank_count",
+        "multiple_count",
+        "correct_count",
+        "incorrect_count",
+        "score",
+        "percentage",
+        "entered_by",
+        "entered_at",
+        "validated_by",
+        "validated_at",
+        "processed_by",
+        "processed_at",
+        "processing_message",
+        "created_at",
+        "updated_at",
+    )
+    fieldsets = (
+        (
+            "Identificação",
+            {
+                "fields": (
+                    "participation",
+                    "student_summary",
+                    "application_summary",
+                    "version_summary",
+                    "status",
+                    "input_method",
+                )
+            },
+        ),
+        (
+            "Resultado geral",
+            {
+                "fields": (
+                    "question_count",
+                    "answered_count",
+                    "correct_count",
+                    "incorrect_count",
+                    "blank_count",
+                    "multiple_count",
+                    "score",
+                    "percentage",
+                    "processing_message",
+                )
+            },
+        ),
+        (
+            "Operação",
+            {
+                "fields": (
+                    "entered_by",
+                    "entered_at",
+                    "validated_by",
+                    "validated_at",
+                    "processed_by",
+                    "processed_at",
+                )
+            },
+        ),
+        (
+            "Histórico",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+    )
+    inlines = (
+        AnswerEntryInline,
+        AnswerSheetBreakdownInline,
+    )
+    actions = (
+        "validate_selected",
+        "process_selected",
+        "reopen_selected",
+    )
+    list_select_related = (
+        "participation",
+        "participation__student",
+        "participation__application",
+        "participation__assessment_version",
+    )
+    save_on_top = True
+
+    def has_add_permission(self, request):
+        return False
+
+    @admin.display(description="Nº")
+    def sequence_display(self, obj):
+        return obj.participation.sequence_number
+
+    @admin.display(description="Aluno")
+    def student_display(self, obj):
+        return obj.participation.student.full_name
+
+    @admin.display(description="Aplicação")
+    def application_display(self, obj):
+        return obj.participation.application.code
+
+    @admin.display(description="Versão")
+    def version_display(self, obj):
+        return obj.participation.assessment_version.code
+
+    @admin.display(description="Percentual")
+    def percentage_display(self, obj):
+        return f"{obj.percentage:.2f}%"
+
+    @admin.display(description="Aluno")
+    def student_summary(self, obj):
+        return (
+            f"{obj.participation.student.full_name} — "
+            f"{obj.participation.student.registration_code}"
+        )
+
+    @admin.display(description="Aplicação")
+    def application_summary(self, obj):
+        return (
+            f"{obj.participation.application.code} — "
+            f"{obj.participation.application.title}"
+        )
+
+    @admin.display(description="Versão da prova")
+    def version_summary(self, obj):
+        version = obj.participation.assessment_version
+
+        return (
+            f"Versão {version.code} — "
+            f"{version.question_count} questões"
+        )
+
+    def save_formset(
+        self,
+        request,
+        form,
+        formset,
+        change,
+    ):
+        has_answer_changes = (
+            formset.model is AnswerEntry
+            and formset.has_changed()
+        )
+
+        instances = formset.save(commit=False)
+
+        for instance in instances:
+            instance.save()
+
+        formset.save_m2m()
+
+        if not has_answer_changes:
+            return
+
+        answer_sheet = form.instance
+
+        answer_sheet.refresh_from_db(
+            fields=[
+                "status",
+            ]
+        )
+
+        if (
+            answer_sheet.status
+            == AnswerSheet.Status.PROCESSED
+        ):
+            return
+
+        now = timezone.now()
+
+        AnswerSheet.objects.filter(
+            pk=answer_sheet.pk,
+        ).update(
+            status=AnswerSheet.Status.ENTERED,
+            input_method=(
+                AnswerSheet.InputMethod.MANUAL
+            ),
+            entered_by=request.user,
+            entered_at=now,
+            processing_message=(
+                "Respostas digitadas; aguardando validação."
+            ),
+            updated_at=now,
+        )
+
+        Participation.objects.filter(
+            pk=answer_sheet.participation_id,
+        ).update(
+            status=(
+                Participation.Status
+                .ANSWER_SHEET_RECEIVED
+            ),
+            updated_at=now,
+        )
+
+    @admin.action(
+        description="Validar lançamentos selecionados",
+    )
+    def validate_selected(self, request, queryset):
+        successes = 0
+        failures = []
+
+        for answer_sheet in queryset:
+            try:
+                validate_answer_sheet(
+                    answer_sheet,
+                    user=request.user,
+                )
+                successes += 1
+            except ValidationError as error:
+                failures.append(
+                    (
+                        f"{answer_sheet}: "
+                        f"{'; '.join(error.messages)}"
+                    )
+                )
+
+        if successes:
+            self.message_user(
+                request,
+                f"{successes} cartão(ões) validado(s).",
+                level=messages.SUCCESS,
+            )
+
+        for failure in failures:
+            self.message_user(
+                request,
+                failure,
+                level=messages.ERROR,
+            )
+
+    @admin.action(
+        description="Processar cartões selecionados",
+    )
+    def process_selected(self, request, queryset):
+        successes = 0
+        failures = []
+
+        for answer_sheet in queryset:
+            try:
+                if (
+                    answer_sheet.status
+                    != AnswerSheet.Status.VALIDATED
+                ):
+                    validate_answer_sheet(
+                        answer_sheet,
+                        user=request.user,
+                    )
+
+                process_answer_sheet(
+                    answer_sheet,
+                    user=request.user,
+                )
+                successes += 1
+            except ValidationError as error:
+                failures.append(
+                    (
+                        f"{answer_sheet}: "
+                        f"{'; '.join(error.messages)}"
+                    )
+                )
+
+        if successes:
+            self.message_user(
+                request,
+                f"{successes} cartão(ões) processado(s).",
+                level=messages.SUCCESS,
+            )
+
+        for failure in failures:
+            self.message_user(
+                request,
+                failure,
+                level=messages.ERROR,
+            )
+
+    @admin.action(
+        description="Reabrir cartões processados",
+    )
+    def reopen_selected(self, request, queryset):
+        successes = 0
+        failures = []
+
+        for answer_sheet in queryset:
+            try:
+                reopen_answer_sheet(answer_sheet)
+                successes += 1
+            except ValidationError as error:
+                failures.append(
+                    (
+                        f"{answer_sheet}: "
+                        f"{'; '.join(error.messages)}"
+                    )
+                )
+
+        if successes:
+            self.message_user(
+                request,
+                f"{successes} cartão(ões) reaberto(s).",
+                level=messages.SUCCESS,
+            )
+
+        for failure in failures:
+            self.message_user(
+                request,
+                failure,
+                level=messages.ERROR,
+            )
+
+
 @admin.register(Participation)
 class ParticipationAdmin(admin.ModelAdmin):
     list_display = (
@@ -415,6 +890,7 @@ class ParticipationAdmin(admin.ModelAdmin):
         "assessment_version",
         "short_code_display",
         "status",
+        "answer_sheet_display",
     )
     list_filter = (
         "status",
@@ -444,6 +920,8 @@ class ParticipationAdmin(admin.ModelAdmin):
     )
     date_hierarchy = "created_at"
     actions = (
+        "initialize_answer_sheets",
+        "export_selected_answer_sheets",
         "mark_present",
         "mark_absent",
     )
@@ -477,3 +955,76 @@ class ParticipationAdmin(admin.ModelAdmin):
             request,
             f"{updated} aluno(s) marcado(s) como ausente(s).",
         )
+
+    @admin.display(description="Lançamento")
+    def answer_sheet_display(self, obj):
+        try:
+            answer_sheet = obj.answer_sheet
+        except AnswerSheet.DoesNotExist:
+            return "Não iniciado"
+
+        url = reverse(
+            "admin:applications_answersheet_change",
+            args=[answer_sheet.pk],
+        )
+
+        return format_html(
+            '<a href="{}">{}</a>',
+            url,
+            answer_sheet.get_status_display(),
+        )
+
+    @admin.action(
+        description="Inicializar lançamento dos cartões",
+    )
+    def initialize_answer_sheets(
+        self,
+        request,
+        queryset,
+    ):
+        created_count = 0
+        existing_count = 0
+        failures = []
+
+        queryset = queryset.select_related(
+            "application",
+            "student",
+            "assessment_version",
+        )
+
+        for participation in queryset:
+            try:
+                _, created = initialize_answer_sheet(
+                    participation,
+                    user=request.user,
+                )
+
+                if created:
+                    created_count += 1
+                else:
+                    existing_count += 1
+
+            except ValidationError as error:
+                failures.append(
+                    (
+                        f"{participation}: "
+                        f"{'; '.join(error.messages)}"
+                    )
+                )
+
+        if created_count or existing_count:
+            self.message_user(
+                request,
+                (
+                    f"{created_count} cartão(ões) iniciado(s); "
+                    f"{existing_count} já existia(m)."
+                ),
+                level=messages.SUCCESS,
+            )
+
+        for failure in failures:
+            self.message_user(
+                request,
+                failure,
+                level=messages.ERROR,
+            )
