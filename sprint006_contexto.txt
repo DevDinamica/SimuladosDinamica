@@ -1,0 +1,986 @@
+]633;E;echo "=== ASSESSMENTS MODELS ===";120c7460-5999-4b51-b172-c272e59d5161]633;C=== ASSESSMENTS MODELS ===
+                    )
+                }
+            )
+
+        if self.assessment_id:
+            overlapping_components = (
+                AssessmentComponent.objects.filter(
+                    assessment_id=self.assessment_id,
+                    start_question__lte=self.end_question,
+                    end_question__gte=self.start_question,
+                )
+            )
+
+            if self.pk:
+                overlapping_components = (
+                    overlapping_components.exclude(pk=self.pk)
+                )
+
+            if overlapping_components.exists():
+                raise ValidationError(
+                    "O intervalo deste componente coincide com "
+                    "outro componente da mesma prova."
+                )
+
+    @property
+    def question_count(self):
+        return self.end_question - self.start_question + 1
+
+    def __str__(self):
+        return (
+            f"{self.assessment.title} — {self.title} "
+            f"({self.start_question}–{self.end_question})"
+        )
+
+
+class AssessmentVersion(models.Model):
+    assessment = models.ForeignKey(
+        Assessment,
+        verbose_name="prova",
+        on_delete=models.CASCADE,
+        related_name="versions",
+    )
+    code = models.CharField(
+        "versão",
+        max_length=10,
+        default="A",
+        help_text="Exemplo: A, B ou C.",
+    )
+    question_count = models.PositiveSmallIntegerField(
+        "quantidade de questões",
+        validators=[MinValueValidator(1)],
+    )
+    option_count = models.PositiveSmallIntegerField(
+        "alternativas por questão",
+        default=5,
+        validators=[MinValueValidator(2)],
+        help_text="Use 4 para A–D ou 5 para A–E.",
+    )
+    total_score = models.DecimalField(
+        "nota máxima",
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("10.00"),
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    source_file = models.FileField(
+        "arquivo específico da versão",
+        upload_to="assessments/versions/%Y/%m/",
+        blank=True,
+    )
+    is_active = models.BooleanField(
+        "ativa",
+        default=True,
+    )
+    created_at = models.DateTimeField(
+        "criada em",
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        "atualizada em",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "versão da prova"
+        verbose_name_plural = "versões das provas"
+        ordering = ["assessment", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["assessment", "code"],
+                name="unique_version_by_assessment",
+            )
+        ]
+
+    def clean(self):
+        self.code = self.code.strip().upper()
+
+        if self.option_count > 5:
+            raise ValidationError(
+                {
+                    "option_count": (
+                        "A versão Light aceita no máximo cinco "
+                        "alternativas: A, B, C, D e E."
+                    )
+                }
+            )
+
+    @property
+    def registered_question_count(self):
+        return self.questions.count()
+
+    @property
+    def is_answer_key_complete(self):
+        return (
+            self.question_count > 0
+            and self.registered_question_count == self.question_count
+            and not self.questions.filter(correct_answer="").exists()
+        )
+
+    def __str__(self):
+        return f"{self.assessment.title} — Versão {self.code}"
+
+
+class Question(models.Model):
+    class Answer(models.TextChoices):
+        A = "A", "A"
+        B = "B", "B"
+        C = "C", "C"
+        D = "D", "D"
+        E = "E", "E"
+
+    version = models.ForeignKey(
+        AssessmentVersion,
+        verbose_name="versão da prova",
+        on_delete=models.CASCADE,
+        related_name="questions",
+    )
+    component = models.ForeignKey(
+        AssessmentComponent,
+        verbose_name="componente curricular",
+        on_delete=models.PROTECT,
+        related_name="questions",
+        null=True,
+        blank=True,
+    )
+    number = models.PositiveSmallIntegerField(
+        "número",
+        validators=[MinValueValidator(1)],
+    )
+    statement = models.TextField(
+        "enunciado",
+        blank=True,
+        help_text=(
+            "Opcional no modo rápido. A prova pode permanecer apenas em PDF."
+        ),
+    )
+    descriptor_code = models.CharField(
+        "código da habilidade/descritor",
+        max_length=50,
+        blank=True,
+    )
+    descriptor = models.CharField(
+        "habilidade/descritor",
+        max_length=255,
+        blank=True,
+    )
+    correct_answer = models.CharField(
+        "resposta correta",
+        max_length=1,
+        choices=Answer.choices,
+        blank=True,
+        help_text=(
+            "Pode permanecer vazia enquanto o gabarito estiver "
+            "aguardando confirmação pedagógica."
+        ),
+    )
+    weight = models.DecimalField(
+        "peso",
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    is_active = models.BooleanField(
+        "ativa",
+        default=True,
+    )
+
+    class Meta:
+        verbose_name = "questão"
+        verbose_name_plural = "questões"
+        ordering = ["version", "number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["version", "number"],
+                name="unique_question_number_by_version",
+            )
+        ]
+
+def clean(self):
+    if not self.version_id:
+        return
+
+    if self.number > self.version.question_count:
+        raise ValidationError(
+            {
+                "number": (
+                    "O número da questão não pode ultrapassar "
+                    "a quantidade definida na versão."
+                )
+            }
+        )
+
+    allowed_answers = list("ABCDE")[
+        : self.version.option_count
+    ]
+
+    if (
+        self.correct_answer
+        and self.correct_answer not in allowed_answers
+    ):
+        raise ValidationError(
+            {
+                "correct_answer": (
+                    "Essa alternativa não existe na configuração "
+                    "desta versão."
+                )
+            }
+        )
+
+    if self.component_id:
+        if (
+            self.component.assessment_id
+            != self.version.assessment_id
+        ):
+            raise ValidationError(
+                {
+                    "component": (
+                        "O componente precisa pertencer à mesma "
+                        "prova da versão."
+                    )
+                }
+            )
+
+        if not (
+            self.component.start_question
+            <= self.number
+            <= self.component.end_question
+        ):
+            raise ValidationError(
+                {
+                    "component": (
+                        "O número da questão está fora do intervalo "
+                        "definido para este componente."
+                    )
+                }
+            )
+
+    @property
+    def calculated_score(self):
+        questions = self.version.questions.filter(
+            is_active=True,
+        )
+
+        total_weight = sum(
+            question.weight for question in questions
+        )
+
+        if not total_weight:
+            return Decimal("0.00")
+
+        return (
+            self.weight
+            / total_weight
+            * self.version.total_score
+        ).quantize(Decimal("0.01"))
+
+    def __str__(self):
+        return (
+            f"{self.version} — Questão {self.number}: "
+            f"{self.correct_answer}"
+        )=== APPLICATIONS MODELS ===
+            self.classroom.school.municipality_id
+            != self.application.municipality_id
+        ):
+            raise ValidationError(
+                {
+                    "classroom": (
+                        "A turma precisa pertencer ao município "
+                        "da aplicação."
+                    )
+                }
+            )
+
+        if not self.application.assessment.grades.filter(
+            pk=self.classroom.grade_id,
+        ).exists():
+            raise ValidationError(
+                {
+                    "classroom": (
+                        "A série desta turma não está contemplada "
+                        "pela prova selecionada."
+                    )
+                }
+            )
+
+        if (
+            self.classroom.academic_year_id
+            != self.application.assessment.academic_year_id
+        ):
+            raise ValidationError(
+                {
+                    "classroom": (
+                        "O ano letivo da turma deve ser o mesmo "
+                        "da prova."
+                    )
+                }
+            )
+
+    #def save(self, *args, **kwargs):
+    #    self.full_clean()
+    #    super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.application.code} — {self.classroom}"
+
+
+class Participation(models.Model):
+    class Status(models.TextChoices):
+        EXPECTED = "EXPECTED", "Previsto"
+        PRESENT = "PRESENT", "Presente"
+        ABSENT = "ABSENT", "Ausente"
+        ANSWER_SHEET_RECEIVED = (
+            "ANSWER_SHEET_RECEIVED",
+            "Gabarito recebido",
+        )
+        PROCESSED = "PROCESSED", "Processado"
+        CANCELLED = "CANCELLED", "Cancelado"
+
+    application = models.ForeignKey(
+        SimulationApplication,
+        verbose_name="aplicação",
+        on_delete=models.CASCADE,
+        related_name="participations",
+    )
+    application_classroom = models.ForeignKey(
+        ApplicationClassroom,
+        verbose_name="turma da aplicação",
+        on_delete=models.PROTECT,
+        related_name="participations",
+    )
+    student = models.ForeignKey(
+        Student,
+        verbose_name="aluno",
+        on_delete=models.PROTECT,
+        related_name="simulation_participations",
+    )
+    enrollment = models.ForeignKey(
+        Enrollment,
+        verbose_name="matrícula",
+        on_delete=models.PROTECT,
+        related_name="simulation_participations",
+    )
+    assessment_version = models.ForeignKey(
+        AssessmentVersion,
+        verbose_name="versão da prova",
+        on_delete=models.PROTECT,
+        related_name="participations",
+    )
+    card_code = models.UUIDField(
+        "código seguro do cartão",
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+    sequence_number = models.PositiveIntegerField(
+        "número sequencial",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        "situação",
+        max_length=30,
+        choices=Status.choices,
+        default=Status.EXPECTED,
+    )
+    notes = models.CharField(
+        "observações",
+        max_length=255,
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        "criada em",
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        "atualizada em",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "participação"
+        verbose_name_plural = "participações"
+        ordering = [
+            "application",
+            "application_classroom",
+            "student__full_name",
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "student"],
+                name="unique_student_by_application",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "sequence_number"],
+                name="unique_sequence_by_application",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["card_code"],
+                name="participation_card_idx",
+            ),
+            models.Index(
+                fields=["application", "status"],
+                name="participation_status_idx",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+
+        if (
+            self.application_classroom_id
+            and self.application_id
+            and self.application_classroom.application_id
+            != self.application_id
+        ):
+            errors["application_classroom"] = (
+                "A turma selecionada não pertence a esta aplicação."
+            )
+
+        if self.enrollment_id and self.student_id:
+            if self.enrollment.student_id != self.student_id:
+                errors["enrollment"] = (
+                    "A matrícula não pertence ao aluno selecionado."
+                )
+
+        if (
+            self.enrollment_id
+            and self.application_classroom_id
+            and self.enrollment.classroom_id
+            != self.application_classroom.classroom_id
+        ):
+            errors["enrollment"] = (
+                "A matrícula não pertence à turma da aplicação."
+            )
+
+        if (
+            self.assessment_version_id
+            and self.application_id
+            and self.assessment_version.assessment_id
+            != self.application.assessment_id
+        ):
+            errors["assessment_version"] = (
+                "A versão não pertence à prova desta aplicação."
+            )
+
+        if (
+            self.assessment_version_id
+            and not self.assessment_version.is_active
+        ):
+            errors["assessment_version"] = (
+                "A versão selecionada não está ativa."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.sequence_number and self.application_id:
+            last_sequence = (
+                Participation.objects.filter(
+                    application_id=self.application_id,
+                )
+                .order_by("-sequence_number")
+                .values_list("sequence_number", flat=True)
+                .first()
+                or 0
+            )
+
+            self.sequence_number = last_sequence + 1
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def short_card_code(self):
+        return str(self.card_code).split("-")[0].upper()
+
+    def __str__(self):
+        return (
+            f"{self.application.code} — "
+            f"{self.student.full_name} — "
+            f"Versão {self.assessment_version.code}"
+        )=== APPLICATIONS ADMIN ===
+from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
+from django.db.models import Count
+from django import forms
+
+from .models import (
+    ApplicationClassroom,
+    Participation,
+    SimulationApplication,
+)
+from .services import generate_application_participations
+from data_portal.models import DataPreparationPortal
+
+class ApplicationClassroomInlineFormSet(
+    forms.models.BaseInlineFormSet
+):
+    def clean(self):
+        super().clean()
+
+        application = self.instance
+
+        if not application.assessment_id:
+            return
+
+        allowed_grade_ids = set(
+            application.assessment.grades.values_list(
+                "id",
+                flat=True,
+            )
+        )
+
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data"):
+                continue
+
+            if form.cleaned_data.get("DELETE"):
+                continue
+
+            classroom = form.cleaned_data.get("classroom")
+
+            if not classroom:
+                continue
+
+            if (
+                classroom.school.municipality_id
+                != application.municipality_id
+            ):
+                form.add_error(
+                    "classroom",
+                    (
+                        "A turma precisa pertencer ao município "
+                        "da aplicação."
+                    ),
+                )
+
+            if classroom.grade_id not in allowed_grade_ids:
+                form.add_error(
+                    "classroom",
+                    (
+                        "A série desta turma não está contemplada "
+                        "pela prova selecionada."
+                    ),
+                )
+
+            if (
+                classroom.academic_year_id
+                != application.assessment.academic_year_id
+            ):
+                form.add_error(
+                    "classroom",
+                    (
+                        "O ano letivo da turma deve ser o mesmo "
+                        "da prova."
+                    ),
+                )
+
+
+class ApplicationClassroomInline(admin.TabularInline):
+    model = ApplicationClassroom
+    formset = ApplicationClassroomInlineFormSet
+    extra = 0
+    fields = (
+        "classroom",
+        "room_name",
+        "is_active",
+    )
+    autocomplete_fields = (
+        "classroom",
+    )
+    show_change_link = True
+
+
+@admin.register(SimulationApplication)
+class SimulationApplicationAdmin(admin.ModelAdmin):
+    actions = (
+        "create_data_portal",
+        "generate_participations",
+        "mark_as_preparing",
+        "mark_as_ready",
+    )
+    list_display = (
+        "code",
+        "title",
+        "assessment",
+        "municipality",
+        "application_date",
+        "status",
+        "classroom_total",
+        "participant_total",
+    )
+    list_filter = (
+        "status",
+        "municipality",
+        "application_date",
+        "assessment__subject",
+        "assessment__components__subject",
+        "assessment__academic_year",
+    )
+    search_fields = (
+        "code",
+        "title",
+        "assessment__title",
+        "assessment__code",
+        "municipality__name",
+        "simulation_request__protocol",
+    )
+    autocomplete_fields = (
+        "simulation_request",
+        "assessment",
+        "municipality",
+        "coordinator",
+    )
+    readonly_fields = (
+        "code",
+        "created_at",
+        "updated_at",
+        "classroom_count_display",
+        "participant_count_display",
+    )
+    inlines = (
+        ApplicationClassroomInline,
+    )
+    date_hierarchy = "application_date"
+    save_on_top = True
+    actions = (
+        "generate_participations",
+        "mark_as_preparing",
+        "mark_as_ready",
+    )
+
+    fieldsets = (
+        (
+            "Identificação",
+            {
+                "fields": (
+                    "code",
+                    "title",
+                    "simulation_request",
+                    "assessment",
+                    "municipality",
+                    "coordinator",
+                )
+            },
+        ),
+        (
+            "Agendamento",
+            {
+                "fields": (
+                    "application_date",
+                    "alternative_date",
+                    "start_time",
+                    "end_time",
+                    "status",
+                )
+            },
+        ),
+        (
+            "Operação",
+            {
+                "fields": (
+                    "general_instructions",
+                    "internal_notes",
+                    "classroom_count_display",
+                    "participant_count_display",
+                )
+            },
+        ),
+        (
+            "Histórico",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related(
+                "assessment",
+                "municipality",
+            )
+            .annotate(
+                classroom_total_annotation=Count(
+                    "application_classrooms",
+                    distinct=True,
+                ),
+                participant_total_annotation=Count(
+                    "participations",
+                    distinct=True,
+                ),
+            )
+        )
+
+    @admin.action(description="Criar portal de preparação dos dados")
+    def create_data_portal(self, request, queryset):
+        created_count = 0
+        existing_count = 0
+
+        for application in queryset:
+            simulation_request = (
+                application.simulation_request
+            )
+
+            if simulation_request:
+                contact_name = (
+                    simulation_request.requester_name
+                )
+                contact_email = (
+                    simulation_request.requester_email
+                )
+            else:
+                contact_name = "Responsável institucional"
+                contact_email = "responsavel@exemplo.com"
+
+            _, created = (
+                DataPreparationPortal.objects.get_or_create(
+                    application=application,
+                    defaults={
+                        "contact_name": contact_name,
+                        "contact_email": contact_email,
+                    },
+                )
+            )
+
+            if created:
+                created_count += 1
+            else:
+                existing_count += 1
+
+        self.message_user(
+            request,
+            (
+                f"{created_count} portal(is) criado(s); "
+                f"{existing_count} já existia(m)."
+            ),
+        )
+
+    @admin.display(description="Turmas")
+    def classroom_total(self, obj):
+        return obj.classroom_total_annotation
+
+    @admin.display(description="Participantes")
+    def participant_total(self, obj):
+        return obj.participant_total_annotation
+
+    @admin.display(description="Turmas vinculadas")
+    def classroom_count_display(self, obj):
+        if not obj.pk:
+            return 0
+
+        return obj.classroom_count
+
+    @admin.display(description="Participações geradas")
+    def participant_count_display(self, obj):
+        if not obj.pk:
+            return 0
+
+        return obj.participant_count
+
+    @admin.action(description="Gerar participações dos alunos")
+    def generate_participations(self, request, queryset):
+        total_created = 0
+        total_existing = 0
+        failures = []
+
+        for application in queryset:
+            try:
+                created, existing = (
+                    generate_application_participations(
+                        application
+                    )
+                )
+                total_created += created
+                total_existing += existing
+            except ValidationError as error:
+                failures.append(
+                    f"{application.code}: {'; '.join(error.messages)}"
+                )
+
+        if total_created or total_existing:
+            self.message_user(
+                request,
+                (
+                    f"{total_created} participação(ões) criada(s); "
+                    f"{total_existing} já existia(m)."
+                ),
+                level=messages.SUCCESS,
+            )
+
+        for failure in failures:
+            self.message_user(
+                request,
+                failure,
+                level=messages.ERROR,
+            )
+
+    @admin.action(description="Marcar como em preparação")
+    def mark_as_preparing(self, request, queryset):
+        updated = queryset.update(
+            status=SimulationApplication.Status.PREPARING,
+        )
+
+        self.message_user(
+            request,
+            f"{updated} aplicação(ões) atualizada(s).",
+        )
+
+    @admin.action(description="Marcar como pronta")
+    def mark_as_ready(self, request, queryset):
+        invalid_applications = queryset.filter(
+            participations__isnull=True,
+        ).distinct()
+
+        if invalid_applications.exists():
+            codes = ", ".join(
+                invalid_applications.values_list(
+                    "code",
+                    flat=True,
+                )
+            )
+
+            self.message_user(
+                request,
+                (
+                    "As aplicações seguintes não possuem participantes: "
+                    f"{codes}."
+                ),
+                level=messages.ERROR,
+            )
+            return
+
+        updated = queryset.update(
+            status=SimulationApplication.Status.READY,
+        )
+
+        self.message_user(
+            request,
+            f"{updated} aplicação(ões) marcada(s) como pronta(s).",
+        )
+
+
+@admin.register(ApplicationClassroom)
+class ApplicationClassroomAdmin(admin.ModelAdmin):
+    list_display = (
+        "application",
+        "classroom",
+        "school_display",
+        "applicator_count",
+        "room_name",
+        "is_active",
+    )
+    list_filter = (
+        "application",
+        "classroom__school__municipality",
+        "classroom__school",
+        "classroom__grade",
+        "is_active",
+    )
+    search_fields = (
+        "application__code",
+        "application__title",
+        "classroom__school__name",
+        "classroom__name",
+    )
+    autocomplete_fields = (
+        "application",
+        "classroom",
+        "applicators",
+    )
+    filter_horizontal = (
+        "applicators",
+    )
+
+    @admin.display(description="Escola")
+    def school_display(self, obj):
+        return obj.classroom.school
+
+    @admin.display(description="Aplicadores")
+    def applicator_count(self, obj):
+        return obj.applicators.count()
+
+
+@admin.register(Participation)
+class ParticipationAdmin(admin.ModelAdmin):
+    list_display = (
+        "sequence_number",
+        "student",
+        "application",
+        "classroom_display",
+        "assessment_version",
+        "short_code_display",
+        "status",
+    )
+    list_filter = (
+        "status",
+        "application",
+        "application_classroom__classroom__school",
+        "application_classroom__classroom__grade",
+        "assessment_version",
+    )
+    search_fields = (
+        "student__full_name",
+        "student__registration_code",
+        "application__code",
+        "card_code",
+    )
+    autocomplete_fields = (
+        "application",
+        "application_classroom",
+        "student",
+        "enrollment",
+        "assessment_version",
+    )
+    readonly_fields = (
+        "card_code",
+        "short_code_display",
+        "created_at",
+        "updated_at",
+    )
+    date_hierarchy = "created_at"
+    actions = (
+        "mark_present",
+        "mark_absent",
+    )
+
+    @admin.display(description="Turma")
+    def classroom_display(self, obj):
+        return obj.application_classroom.classroom
+
+    @admin.display(description="Código curto")
+    def short_code_display(self, obj):
+        return obj.short_card_code
+
+    @admin.action(description="Marcar como presente")
+    def mark_present(self, request, queryset):
+        updated = queryset.update(
+            status=Participation.Status.PRESENT,
+        )
+
+        self.message_user(
+            request,
+            f"{updated} aluno(s) marcado(s) como presente(s).",
+        )
+
+    @admin.action(description="Marcar como ausente")
+    def mark_absent(self, request, queryset):
+        updated = queryset.update(
+            status=Participation.Status.ABSENT,
+        )
+
+        self.message_user(
+            request,
+            f"{updated} aluno(s) marcado(s) como ausente(s).",
+        )

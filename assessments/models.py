@@ -376,64 +376,64 @@ class Question(models.Model):
             )
         ]
 
-def clean(self):
-    if not self.version_id:
-        return
+    def clean(self):
+        if not self.version_id:
+            return
 
-    if self.number > self.version.question_count:
-        raise ValidationError(
-            {
-                "number": (
-                    "O número da questão não pode ultrapassar "
-                    "a quantidade definida na versão."
-                )
-            }
-        )
+        if self.number > self.version.question_count:
+            raise ValidationError(
+                {
+                    "number": (
+                        "O número da questão não pode ultrapassar "
+                        "a quantidade definida na versão."
+                    )
+                }
+            )
 
-    allowed_answers = list("ABCDE")[
-        : self.version.option_count
-    ]
+        allowed_answers = list("ABCDE")[
+            : self.version.option_count
+        ]
 
-    if (
-        self.correct_answer
-        and self.correct_answer not in allowed_answers
-    ):
-        raise ValidationError(
-            {
-                "correct_answer": (
-                    "Essa alternativa não existe na configuração "
-                    "desta versão."
-                )
-            }
-        )
-
-    if self.component_id:
         if (
-            self.component.assessment_id
-            != self.version.assessment_id
+            self.correct_answer
+            and self.correct_answer not in allowed_answers
         ):
             raise ValidationError(
                 {
-                    "component": (
-                        "O componente precisa pertencer à mesma "
-                        "prova da versão."
+                    "correct_answer": (
+                        "Essa alternativa não existe na configuração "
+                        "desta versão."
                     )
                 }
             )
 
-        if not (
-            self.component.start_question
-            <= self.number
-            <= self.component.end_question
-        ):
-            raise ValidationError(
-                {
-                    "component": (
-                        "O número da questão está fora do intervalo "
-                        "definido para este componente."
-                    )
-                }
-            )
+        if self.component_id:
+            if (
+                self.component.assessment_id
+                != self.version.assessment_id
+            ):
+                raise ValidationError(
+                    {
+                        "component": (
+                            "O componente precisa pertencer à mesma "
+                            "prova da versão."
+                        )
+                    }
+                )
+
+            if not (
+                self.component.start_question
+                <= self.number
+                <= self.component.end_question
+            ):
+                raise ValidationError(
+                    {
+                        "component": (
+                            "O número da questão está fora do intervalo "
+                            "definido para este componente."
+                        )
+                    }
+                )
 
     @property
     def calculated_score(self):
@@ -442,7 +442,11 @@ def clean(self):
         )
 
         total_weight = sum(
-            question.weight for question in questions
+            (
+                question.weight
+                for question in questions
+            ),
+            Decimal("0.00"),
         )
 
         if not total_weight:
@@ -455,7 +459,9 @@ def clean(self):
         ).quantize(Decimal("0.01"))
 
     def __str__(self):
+        answer = self.correct_answer or "sem gabarito"
+
         return (
             f"{self.version} — Questão {self.number}: "
-            f"{self.correct_answer}"
+            f"{answer}"
         )
