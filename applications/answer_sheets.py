@@ -17,11 +17,11 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
 
-BLUE = HexColor("#173D7A")
-LIGHT_BLUE = HexColor("#EAF1FA")
-GOLD = HexColor("#F2A900")
-GRAY = HexColor("#64748B")
-LIGHT_GRAY = HexColor("#D9E2EF")
+BLUE = HexColor("#B71C1C")
+LIGHT_BLUE = HexColor("#FDECEC")
+GOLD = HexColor("#FFD166")
+GRAY = HexColor("#5F6368")
+LIGHT_GRAY = HexColor("#E5D4D4")
 
 FONT_REGULAR = "Helvetica"
 FONT_BOLD = "Helvetica-Bold"

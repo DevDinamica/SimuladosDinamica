@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .models import SimulationRequest
+from academics.models import Grade, Subject
 
 
 class SimulationRequestForm(forms.ModelForm):
@@ -33,14 +34,8 @@ class SimulationRequestForm(forms.ModelForm):
             "estimated_school_count",
             "estimated_classroom_count",
             "estimated_student_count",
-            "estimated_question_count",
             "objective",
             "objective_details",
-            "assessment_source",
-            "print_responsibility",
-            "applicator_responsibility",
-            "has_scanning_devices",
-            "internet_quality",
             "notes",
             "privacy_accepted",
         )
@@ -73,6 +68,35 @@ class SimulationRequestForm(forms.ModelForm):
                 "dados necessários à aplicação."
             ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["grades"].queryset = (
+            Grade.objects.filter(
+                name__in=[
+                    "2º ano",
+                    "5º ano",
+                    "9º ano",
+                ],
+                is_active=True,
+            )
+            .select_related("stage")
+            .order_by(
+                "stage__order",
+                "order",
+            )
+        )
+
+        self.fields["subjects"].queryset = (
+            Subject.objects.filter(
+                name__in=[
+                    "Língua Portuguesa",
+                    "Matemática",
+                ],
+                is_active=True,
+            ).order_by("name")
+        )
 
     def clean_website(self):
         value = self.cleaned_data.get("website")
@@ -139,3 +163,37 @@ class SimulationRequestForm(forms.ModelForm):
             )
 
         return cleaned_data
+
+    def save(self, commit=True):
+        simulation_request = super().save(
+            commit=False
+        )
+
+        selected_subjects = self.cleaned_data.get(
+            "subjects"
+        )
+
+        if selected_subjects is not None:
+            simulation_request.estimated_question_count = (
+                selected_subjects.count() * 20
+            )
+
+        simulation_request.assessment_source = (
+            SimulationRequest.AssessmentSource.PUBLISHER
+        )
+        simulation_request.print_responsibility = (
+            SimulationRequest.PrintResponsibility.PUBLISHER
+        )
+        simulation_request.applicator_responsibility = (
+            SimulationRequest.ApplicatorResponsibility.PUBLISHER
+        )
+        simulation_request.has_scanning_devices = False
+        simulation_request.internet_quality = (
+            SimulationRequest.InternetQuality.UNKNOWN
+        )
+
+        if commit:
+            simulation_request.save()
+            self.save_m2m()
+
+        return simulation_request

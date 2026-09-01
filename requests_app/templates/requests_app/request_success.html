@@ -8,67 +8,97 @@
 <section class="success-card">
     <div class="success-icon">✓</div>
 
-    <p class="eyebrow">Solicitação recebida</p>
+    <p class="eyebrow dark-eyebrow">
+        Solicitação recebida
+    </p>
 
     <h1>
-        O planejamento do simulado foi registrado.
+        O planejamento da avaliação foi registrado.
     </h1>
 
-    <p>
-        A equipe da Editora Dinâmica analisará as informações
-        enviadas e entrará em contato pelo e-mail
+    <p class="success-lead">
+        A equipe da Editora Dinâmica analisará as informações e
+        entrará em contato pelo e-mail
         <strong>{{ simulation_request.requester_email }}</strong>.
     </p>
 
     <div class="protocol">
         <span>Protocolo da solicitação</span>
         <strong>{{ simulation_request.protocol }}</strong>
+        <small>Guarde este código para futuras comunicações.</small>
     </div>
 
-    <h2>Próximas etapas</h2>
+    <div class="success-summary">
+        <div>
+            <span>Município</span>
+            <strong>
+                {{ simulation_request.municipality_name }}/{{ simulation_request.state }}
+            </strong>
+        </div>
 
-    <ol>
-        <li>
-            A Editora verificará o escopo, as datas e a operação.
-        </li>
+        <div>
+            <span>Alunos estimados</span>
+            <strong>
+                {{ simulation_request.estimated_student_count }}
+            </strong>
+        </div>
 
-        <li>
-            O responsável receberá orientações sobre a preparação.
-        </li>
+        <div>
+            <span>Questões previstas</span>
+            <strong>
+                {{ simulation_request.estimated_question_count }}
+            </strong>
+        </div>
+    </div>
 
-        <li>
-            Será disponibilizado o modelo oficial de planilha.
-        </li>
+    <section class="next-steps">
+        <h2>Próximas etapas</h2>
 
-        <li>
-            A lista será validada antes da criação das aplicações.
-        </li>
+        <ol class="process-list horizontal-process">
+            <li>
+                <strong>Análise da solicitação</strong>
+                <span>
+                    A Editora verificará escopo, datas e público.
+                </span>
+            </li>
 
-        <li>
-            As provas e cartões-resposta serão preparados.
-        </li>
-    </ol>
+            <li>
+                <strong>Portal de preparação</strong>
+                <span>
+                    Será liberada uma página exclusiva para os dados
+                    de escolas, turmas e alunos.
+                </span>
+            </li>
+
+            <li>
+                <strong>Aplicação preparada</strong>
+                <span>
+                    Participações, versões e cartões serão gerados.
+                </span>
+            </li>
+        </ol>
+    </section>
 
     <div class="warning">
         <strong>Não envie dados de alunos por esta página.</strong>
 
-        A lista nominal deverá conter apenas os dados necessários e
-        será recebida posteriormente pelo canal indicado pela Editora.
+        A lista nominal será recebida posteriormente pelo portal
+        protegido da aplicação.
     </div>
 
-    <h2>Dados que poderão ser solicitados</h2>
+    <div class="success-footer">
+        <div>
+            <strong>Dados solicitados na próxima etapa</strong>
 
-    <ul>
-        <li>Município e escola;</li>
-        <li>Código INEP;</li>
-        <li>Série, turma e turno;</li>
-        <li>Matrícula institucional;</li>
-        <li>Nome do estudante.</li>
-    </ul>
+            <p>
+                Escola, código INEP, série, turma, turno,
+                matrícula institucional e nome do estudante.
+            </p>
+        </div>
 
-    <p>
-        Guarde o protocolo para qualquer comunicação sobre esta
-        solicitação.
-    </p>
+        <a href="{% url 'requests_app:create' %}" class="button secondary-button">
+            Nova solicitação
+        </a>
+    </div>
 </section>
 {% endblock %}

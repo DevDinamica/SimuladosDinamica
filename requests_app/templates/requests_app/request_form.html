@@ -1,28 +1,53 @@
 {% extends "base.html" %}
 
 {% block title %}
-    Solicitar Simulado | Dinâmica Simulados
+    Solicitar Avaliação | Dinâmica Simulados
 {% endblock %}
 
 {% block content %}
-<section class="hero">
-    <div>
-        <p class="eyebrow">Solicitação institucional</p>
+<section class="hero request-hero">
+    <div class="hero-copy">
+        <p class="eyebrow">
+            Solicitação institucional
+        </p>
 
-        <h1>Leve um Simulado Dinâmica para sua rede ou escola.</h1>
+        <h1>
+            Leve uma Avaliação Dinâmica para sua rede ou escola.
+        </h1>
 
         <p>
-            Envie as informações iniciais da aplicação. Nossa equipe
-            analisará a solicitação e orientará as próximas etapas.
+            Informe o planejamento inicial. Nossa equipe analisará
+            o escopo, as datas e orientará todas as próximas etapas.
         </p>
+
+        <div class="hero-metrics">
+            <div>
+                <strong>20</strong>
+                <span>questões de Português</span>
+            </div>
+
+            <div>
+                <strong>20</strong>
+                <span>questões de Matemática</span>
+            </div>
+
+            <div>
+                <strong>40</strong>
+                <span>questões no formato completo</span>
+            </div>
+        </div>
     </div>
 
     <div class="hero-note">
-        <strong>Importante</strong>
+        <span class="hero-note-icon">🔒</span>
 
-        Nesta etapa, não envie nomes, matrículas ou documentos de
-        estudantes. Os dados acadêmicos serão solicitados posteriormente
-        por um canal específico.
+        <div>
+            <strong>Dados dos alunos vêm depois</strong>
+
+            Nesta etapa, não envie nomes, matrículas ou documentos
+            de estudantes. Após a aprovação, disponibilizaremos um
+            portal exclusivo e seguro.
+        </div>
     </div>
 </section>
 
@@ -38,11 +63,17 @@
         {% endif %}
 
         <section class="form-section">
-            <h2>1. Responsável pela solicitação</h2>
+            <div class="section-heading">
+                <span class="section-number">1</span>
 
-            <p class="section-description">
-                Informe quem poderá acompanhar a preparação do simulado.
-            </p>
+                <div>
+                    <h2>Responsável pela solicitação</h2>
+
+                    <p class="section-description">
+                        Informe quem acompanhará a preparação da avaliação.
+                    </p>
+                </div>
+            </div>
 
             <div class="form-grid">
                 {% include "requests_app/field.html" with field=form.requester_name %}
@@ -54,11 +85,17 @@
         </section>
 
         <section class="form-section">
-            <h2>2. Instituição e abrangência</h2>
+            <div class="section-heading">
+                <span class="section-number">2</span>
 
-            <p class="section-description">
-                Identifique onde e para quem a avaliação será aplicada.
-            </p>
+                <div>
+                    <h2>Instituição e abrangência</h2>
+
+                    <p class="section-description">
+                        Identifique onde e para quem a avaliação será aplicada.
+                    </p>
+                </div>
+            </div>
 
             <div class="form-grid">
                 {% include "requests_app/field.html" with field=form.state %}
@@ -71,77 +108,118 @@
         </section>
 
         <section class="form-section">
-            <h2>3. Planejamento do simulado</h2>
+            <div class="section-heading">
+                <span class="section-number">3</span>
 
-            <p class="section-description">
-                As quantidades podem ser estimadas nesta primeira etapa.
-            </p>
+                <div>
+                    <h2>Planejamento da avaliação</h2>
+
+                    <p class="section-description">
+                        As quantidades podem ser estimadas nesta etapa.
+                    </p>
+                </div>
+            </div>
+
+            <div class="format-summary">
+                <div class="format-symbol">40</div>
+
+                <div>
+                    <strong>Formato completo atual</strong>
+
+                    <p>
+                        20 questões de Língua Portuguesa e
+                        20 questões de Matemática.
+                    </p>
+                </div>
+            </div>
 
             <div class="form-grid">
                 {% include "requests_app/field.html" with field=form.preferred_date %}
                 {% include "requests_app/field.html" with field=form.alternative_date %}
                 {% include "requests_app/field.html" with field=form.academic_year %}
-                {% include "requests_app/field.html" with field=form.estimated_question_count %}
                 {% include "requests_app/field.html" with field=form.estimated_school_count %}
                 {% include "requests_app/field.html" with field=form.estimated_classroom_count %}
-                {% include "requests_app/field.html" with field=form.estimated_student_count full=True %}
+                {% include "requests_app/field.html" with field=form.estimated_student_count %}
             </div>
         </section>
 
         <section class="form-section">
-            <h2>4. Séries e disciplinas</h2>
+            <div class="section-heading">
+                <span class="section-number">4</span>
+
+                <div>
+                    <h2>Séries e disciplinas</h2>
+
+                    <p class="section-description">
+                        Selecione o público contemplado pela avaliação.
+                    </p>
+                </div>
+            </div>
 
             <div class="form-grid">
                 <div class="form-field">
-                    <label>{{ form.grades.label }}</label>
+                    <label>{{ form.grades.label }} *</label>
 
                     <div class="checkbox-list">
                         {{ form.grades }}
                     </div>
 
-                    {{ form.grades.errors }}
+                    {% if form.grades.errors %}
+                        <div class="error-list">
+                            {{ form.grades.errors }}
+                        </div>
+                    {% endif %}
                 </div>
 
                 <div class="form-field">
-                    <label>{{ form.subjects.label }}</label>
+                    <label>{{ form.subjects.label }} *</label>
 
                     <div class="checkbox-list">
                         {{ form.subjects }}
                     </div>
 
-                    {{ form.subjects.errors }}
+                    {% if form.subjects.errors %}
+                        <div class="error-list">
+                            {{ form.subjects.errors }}
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </section>
 
         <section class="form-section">
-            <h2>5. Objetivo e operação</h2>
+            <div class="section-heading">
+                <span class="section-number">5</span>
+
+                <div>
+                    <h2>Objetivo da avaliação</h2>
+
+                    <p class="section-description">
+                        Conte o que a instituição pretende diagnosticar
+                        ou acompanhar.
+                    </p>
+                </div>
+            </div>
 
             <div class="form-grid">
                 {% include "requests_app/field.html" with field=form.objective %}
                 {% include "requests_app/field.html" with field=form.objective_details %}
-                {% include "requests_app/field.html" with field=form.assessment_source %}
-                {% include "requests_app/field.html" with field=form.print_responsibility %}
-                {% include "requests_app/field.html" with field=form.applicator_responsibility %}
-                {% include "requests_app/field.html" with field=form.internet_quality %}
-
-                <div class="form-field full">
-                    <div class="privacy-box">
-                        <label>
-                            {{ form.has_scanning_devices }}
-                            <span>
-                                {{ form.has_scanning_devices.label }}
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
                 {% include "requests_app/field.html" with field=form.notes full=True %}
             </div>
         </section>
 
-        <section class="form-section">
-            <h2>6. Confirmação institucional</h2>
+        <section class="form-section confirmation-section">
+            <div class="section-heading">
+                <span class="section-number">6</span>
+
+                <div>
+                    <h2>Confirmação institucional</h2>
+
+                    <p class="section-description">
+                        Confirme a autorização antes de enviar.
+                    </p>
+                </div>
+            </div>
 
             <div class="privacy-box">
                 <label>
@@ -152,37 +230,92 @@
                     </span>
                 </label>
 
-                {{ form.privacy_accepted.errors }}
+                {% if form.privacy_accepted.errors %}
+                    <div class="error-list">
+                        {{ form.privacy_accepted.errors }}
+                    </div>
+                {% endif %}
             </div>
         </section>
 
         <div class="form-actions">
+            <div class="submit-copy">
+                <strong>Pronto para enviar?</strong>
+
+                <span>
+                    Você receberá um protocolo após a confirmação.
+                </span>
+            </div>
+
             <button type="submit" class="button">
                 Enviar solicitação
+                <span aria-hidden="true">→</span>
             </button>
         </div>
     </form>
 
     <aside class="info-card">
+        <p class="eyebrow dark-eyebrow">
+            Fluxo da aplicação
+        </p>
+
         <h2>Como funciona?</h2>
 
-        <ol>
-            <li>Envie a solicitação institucional.</li>
-            <li>A Editora analisará o escopo e as datas.</li>
-            <li>Você receberá as instruções da operação.</li>
-            <li>Os dados serão enviados por canal seguro.</li>
-            <li>A aplicação e os cartões serão preparados.</li>
+        <ol class="process-list">
+            <li>
+                <strong>Solicitação</strong>
+                <span>A instituição informa o planejamento inicial.</span>
+            </li>
+
+            <li>
+                <strong>Análise</strong>
+                <span>A Editora verifica escopo, público e datas.</span>
+            </li>
+
+            <li>
+                <strong>Cadastro dos alunos</strong>
+                <span>
+                    Um portal seguro será liberado para escolas,
+                    turmas e estudantes.
+                </span>
+            </li>
+
+            <li>
+                <strong>Cartões e aplicação</strong>
+                <span>
+                    Os cartões nominais e as versões são preparados.
+                </span>
+            </li>
+
+            <li>
+                <strong>Correção e relatórios</strong>
+                <span>
+                    Os resultados são organizados por aluno, turma,
+                    escola e descritor.
+                </span>
+            </li>
         </ol>
+
+        <div class="info-divider"></div>
 
         <h3>Separe previamente</h3>
 
-        <ul>
+        <ul class="check-list">
             <li>Estimativa de alunos;</li>
             <li>Escolas e turmas participantes;</li>
             <li>Séries e disciplinas;</li>
             <li>Datas pretendidas;</li>
-            <li>Responsáveis pela aplicação.</li>
+            <li>Responsável institucional.</li>
         </ul>
+
+        <div class="data-safety">
+            <strong>Sem lista nominal agora</strong>
+
+            <p>
+                Os estudantes serão cadastrados somente depois,
+                em página exclusiva para a aplicação aprovada.
+            </p>
+        </div>
     </aside>
 </div>
 {% endblock %}
