@@ -85,8 +85,7 @@ class CorrectionServiceTest(TestCase):
             order=9,
         )
 
-        cls.subject = Subject.objects.create(
-            name="Matemática",
+        cls.subject = Subject.objects.get(
             code="MAT",
         )
 
