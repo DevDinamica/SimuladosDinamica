@@ -18,6 +18,17 @@ from institutions.models import School
 
 from .models import DataPreparationPortal, SpreadsheetUpload
 
+from .simplified_converter import (
+    convert_simplified_rows,
+)
+from .simplified_workbook import (
+    get_simplified_headers,
+    read_simplified_rows,
+)
+
+from .simplified_rules import (
+    validate_simplified_business_rules,
+)
 
 REQUIRED_SHEETS = {
     "ESCOLAS",
@@ -112,6 +123,242 @@ def read_sheet_rows(sheet):
 
     return headers, rows
 
+def read_structured_workbook(
+    workbook,
+    report,
+):
+    parsed = {}
+
+    for sheet_name in REQUIRED_SHEETS:
+        headers, rows = read_sheet_rows(
+            workbook[sheet_name]
+        )
+        parsed[sheet_name] = rows
+
+        missing_headers = (
+            REQUIRED_HEADERS[sheet_name]
+            - set(headers)
+        )
+
+        for header in sorted(
+            missing_headers
+        ):
+            add_error(
+                report,
+                sheet_name,
+                1,
+                (
+                    "Coluna obrigatória "
+                    f"ausente: {header}."
+                ),
+            )
+
+    return {
+        "schools": parsed["ESCOLAS"],
+        "classrooms": parsed["TURMAS"],
+        "students": parsed["ALUNOS"],
+        "format": "STRUCTURED",
+    }
+
+def get_application_subject_codes(
+    application,
+):
+    assessment = application.assessment
+
+    subject_codes = set(
+        assessment.components.filter(
+            is_active=True,
+        ).values_list(
+            "subject__code",
+            flat=True,
+        )
+    )
+
+    if (
+        not subject_codes
+        and assessment.subject_id
+    ):
+        subject_codes.add(
+            assessment.subject.code
+        )
+
+    return subject_codes
+
+
+def read_simplified_workbook(
+    upload,
+    workbook,
+    report,
+):
+    sheet = workbook["ALUNOS"]
+
+    try:
+        rows = read_simplified_rows(
+            sheet
+        )
+    except ValidationError as error:
+        for message in error.messages:
+            add_error(
+                report,
+                "ALUNOS",
+                1,
+                message,
+            )
+
+        return {
+            "schools": [],
+            "classrooms": [],
+            "students": [],
+            "format": "SIMPLIFIED",
+        }
+
+    validate_simplified_business_rules(
+        rows,
+        upload.portal.application,
+        report,
+    )
+
+    subject_codes = (
+        get_application_subject_codes(
+            upload.portal.application
+        )
+    )
+
+    converted = convert_simplified_rows(
+        rows,
+        subject_codes,
+    )
+
+    generated_count = sum(
+        1
+        for student in converted[
+            "students"
+        ]
+        if student.get(
+            "_matricula_gerada"
+        )
+    )
+
+    if generated_count:
+        add_warning(
+            report,
+            "ALUNOS",
+            None,
+            (
+                f"{generated_count} aluno(s) "
+                "não possuem matrícula. "
+                "O sistema gerará códigos "
+                "internos para identificá-los."
+            ),
+        )
+
+    report["warnings"].append({
+        "sheet": "ARQUIVO",
+        "row": None,
+        "message": (
+            "Planilha simplificada "
+            "reconhecida automaticamente."
+        ),
+    })
+
+    return {
+        **converted,
+        "format": "SIMPLIFIED",
+    }
+
+def detect_workbook_format(
+    workbook,
+):
+    sheet_names = set(
+        workbook.sheetnames
+    )
+
+    if REQUIRED_SHEETS.issubset(
+        sheet_names
+    ):
+        return "STRUCTURED"
+
+    if "ALUNOS" not in sheet_names:
+        return None
+
+    headers = set(
+        get_simplified_headers(
+            workbook["ALUNOS"]
+        )
+    )
+
+    simplified_markers = {
+        "nome_aluno",
+        "serie",
+        "turma",
+        "codigo_inep",
+    }
+
+    if simplified_markers.intersection(
+        headers
+    ):
+        return "SIMPLIFIED"
+
+    return None
+
+def read_uploaded_workbook(
+    upload,
+    workbook,
+    report,
+):
+    workbook_format = (
+        detect_workbook_format(
+            workbook
+        )
+    )
+
+    if workbook_format == "STRUCTURED":
+        return read_structured_workbook(
+            workbook,
+            report,
+        )
+
+    if workbook_format == "SIMPLIFIED":
+        return read_simplified_workbook(
+            upload,
+            workbook,
+            report,
+        )
+
+    sheet_names = set(
+        workbook.sheetnames
+    )
+
+    for sheet_name in sorted(
+        REQUIRED_SHEETS - sheet_names
+    ):
+        add_error(
+            report,
+            sheet_name,
+            None,
+            (
+                "Aba obrigatória não "
+                "encontrada."
+            ),
+        )
+
+    add_error(
+        report,
+        "ARQUIVO",
+        None,
+        (
+            "O formato da planilha não foi "
+            "reconhecido. Utilize o modelo "
+            "oficial disponibilizado pelo portal."
+        ),
+    )
+
+    return {
+        "schools": [],
+        "classrooms": [],
+        "students": [],
+        "format": None,
+    }
 
 def validate_upload(upload):
     report = {
@@ -136,45 +383,24 @@ def validate_upload(upload):
         })
         return finalize_validation(upload, report, {}, {}, {})
 
-    missing_sheets = REQUIRED_SHEETS - set(
-        workbook.sheetnames
+    parsed = read_uploaded_workbook(
+        upload,
+        workbook,
+        report,
     )
 
-    for sheet_name in sorted(missing_sheets):
-        report["errors"].append({
-            "sheet": sheet_name,
-            "row": None,
-            "message": "Aba obrigatória não encontrada.",
-        })
+    schools = parsed["schools"]
+    classrooms = parsed["classrooms"]
+    students = parsed["students"]
 
-    if missing_sheets:
-        return finalize_validation(upload, report, {}, {}, {})
-
-    parsed = {}
-
-    for sheet_name in REQUIRED_SHEETS:
-        headers, rows = read_sheet_rows(
-            workbook[sheet_name]
+    if parsed["format"] is None:
+        return finalize_validation(
+            upload,
+            report,
+            schools,
+            classrooms,
+            students,
         )
-        parsed[sheet_name] = rows
-
-        missing_headers = (
-            REQUIRED_HEADERS[sheet_name]
-            - set(headers)
-        )
-
-        for header in sorted(missing_headers):
-            report["errors"].append({
-                "sheet": sheet_name,
-                "row": 1,
-                "message": (
-                    f"Coluna obrigatória ausente: {header}."
-                ),
-            })
-
-    schools = parsed["ESCOLAS"]
-    classrooms = parsed["TURMAS"]
-    students = parsed["ALUNOS"]
 
     school_codes = {}
     classroom_codes = {}
@@ -445,6 +671,18 @@ def add_error(report, sheet, row, message):
         "message": message,
     })
 
+def add_warning(
+    report,
+    sheet,
+    row,
+    message,
+):
+    report["warnings"].append({
+        "sheet": sheet,
+        "row": row,
+        "message": message,
+    })
+
 
 def finalize_validation(
     upload,
@@ -499,15 +737,34 @@ def import_validated_upload(upload):
         data_only=True,
     )
 
-    _, school_rows = read_sheet_rows(
-        workbook["ESCOLAS"]
+    import_report = {
+        "errors": [],
+        "warnings": [],
+    }
+
+    parsed = read_uploaded_workbook(
+        upload,
+        workbook,
+        import_report,
     )
-    _, classroom_rows = read_sheet_rows(
-        workbook["TURMAS"]
-    )
-    _, student_rows = read_sheet_rows(
-        workbook["ALUNOS"]
-    )
+
+    if import_report["errors"]:
+        messages = [
+            item["message"]
+            for item in import_report[
+                "errors"
+            ]
+        ]
+
+        raise ValidationError(
+            messages
+        )
+
+    school_rows = parsed["schools"]
+    classroom_rows = parsed[
+        "classrooms"
+    ]
+    student_rows = parsed["students"]
 
     application = upload.portal.application
     municipality = application.municipality
