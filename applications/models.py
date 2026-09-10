@@ -1,5 +1,8 @@
 import uuid
+from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -14,6 +17,45 @@ from assessments.models import (
 from institutions.models import Municipality
 from requests_app.models import SimulationRequest
 
+from django.core.validators import (
+    FileExtensionValidator,
+)
+
+def default_card_portal_expiry():
+    return timezone.now() + timedelta(
+        days=30
+    )
+
+
+def validate_answer_sheet_image(file):
+    maximum_size = 12 * 1024 * 1024
+
+    if file.size > maximum_size:
+        raise ValidationError(
+            "A imagem não pode ultrapassar 12 MB."
+        )
+
+
+def answer_sheet_image_path(
+    instance,
+    filename,
+):
+    extension = Path(
+        filename
+    ).suffix.lower()
+
+    application_code = (
+        instance.portal.application.code
+    )
+
+    identifier = uuid.uuid4().hex
+
+    return (
+        "private/answer_sheets/"
+        f"{application_code}/"
+        f"{timezone.now():%Y/%m}/"
+        f"{identifier}{extension}"
+    )
 
 class SimulationApplication(models.Model):
     class Status(models.TextChoices):
@@ -506,6 +548,269 @@ class Participation(models.Model):
             f"Versão {self.assessment_version.code}"
         )
 
+class CardSubmissionPortal(models.Model):
+    application = models.OneToOneField(
+        SimulationApplication,
+        verbose_name="aplicação",
+        on_delete=models.CASCADE,
+        related_name="card_submission_portal",
+    )
+    token = models.UUIDField(
+        "token de acesso",
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+    contact_name = models.CharField(
+        "responsável pelo envio",
+        max_length=200,
+        blank=True,
+    )
+    contact_email = models.EmailField(
+        "e-mail do responsável",
+        blank=True,
+    )
+    expires_at = models.DateTimeField(
+        "válido até",
+        default=default_card_portal_expiry,
+    )
+    is_active = models.BooleanField(
+        "ativo",
+        default=True,
+    )
+    instructions = models.TextField(
+        "orientações",
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        "criado em",
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        "atualizado em",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "portal de envio de cartões"
+        verbose_name_plural = (
+            "portais de envio de cartões"
+        )
+        ordering = [
+            "-created_at",
+        ]
+        indexes = [
+            models.Index(
+                fields=["token"],
+                name="card_portal_token_idx",
+            ),
+            models.Index(
+                fields=[
+                    "is_active",
+                    "expires_at",
+                ],
+                name="card_portal_access_idx",
+            ),
+        ]
+
+    @property
+    def is_expired(self):
+        return (
+            timezone.now()
+            > self.expires_at
+        )
+
+    @property
+    def can_be_accessed(self):
+        return (
+            self.is_active
+            and not self.is_expired
+            and self.application.status
+            != SimulationApplication.Status.CANCELLED
+        )
+
+    @property
+    def submission_count(self):
+        return self.submissions.count()
+
+    def __str__(self):
+        return (
+            f"{self.application.code} — "
+            "Envio de cartões"
+        )
+
+
+class AnswerSheetImageSubmission(models.Model):
+    class Status(models.TextChoices):
+        RECEIVED = (
+            "RECEIVED",
+            "Recebido",
+        )
+        UNDER_REVIEW = (
+            "UNDER_REVIEW",
+            "Em revisão",
+        )
+        ACCEPTED = (
+            "ACCEPTED",
+            "Aceito",
+        )
+        REJECTED = (
+            "REJECTED",
+            "Rejeitado",
+        )
+
+    portal = models.ForeignKey(
+        CardSubmissionPortal,
+        verbose_name="portal",
+        on_delete=models.CASCADE,
+        related_name="submissions",
+    )
+    participation = models.ForeignKey(
+        Participation,
+        verbose_name="participação",
+        on_delete=models.PROTECT,
+        related_name="image_submissions",
+    )
+    submission_code = models.UUIDField(
+        "código do envio",
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+    image = models.ImageField(
+        "imagem do cartão-resposta",
+        upload_to=answer_sheet_image_path,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=[
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "webp",
+                ],
+                message=(
+                    "Envie uma imagem JPG, PNG "
+                    "ou WEBP."
+                ),
+            ),
+            validate_answer_sheet_image,
+        ],
+    )
+    original_name = models.CharField(
+        "nome original",
+        max_length=255,
+        blank=True,
+    )
+    file_size = models.PositiveIntegerField(
+        "tamanho do arquivo",
+        default=0,
+        editable=False,
+    )
+    status = models.CharField(
+        "situação",
+        max_length=30,
+        choices=Status.choices,
+        default=Status.RECEIVED,
+    )
+    sender_name = models.CharField(
+        "nome de quem enviou",
+        max_length=200,
+        blank=True,
+    )
+    review_notes = models.TextField(
+        "observações da revisão",
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        "recebido em",
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        "atualizado em",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "cartão fotografado"
+        verbose_name_plural = (
+            "cartões fotografados"
+        )
+        ordering = [
+            "-created_at",
+        ]
+        indexes = [
+            models.Index(
+                fields=["status", "created_at"],
+                name="sheet_upload_status_idx",
+            ),
+            models.Index(
+                fields=["submission_code"],
+                name="sheet_upload_code_idx",
+            ),
+        ]
+
+    @property
+    def protocol(self):
+        short_code = str(
+            self.submission_code
+        ).split("-")[0].upper()
+
+        return f"ENV-{short_code}"
+
+    def clean(self):
+        errors = {}
+
+        if (
+            self.portal_id
+            and self.participation_id
+            and self.participation.application_id
+            != self.portal.application_id
+        ):
+            errors["participation"] = (
+                "O aluno não pertence à aplicação "
+                "deste portal."
+            )
+
+        if (
+            self.participation_id
+            and self.participation.status
+            in {
+                Participation.Status.ABSENT,
+                Participation.Status.CANCELLED,
+            }
+        ):
+            errors["participation"] = (
+                "Não é possível enviar cartão para "
+                "participação ausente ou cancelada."
+            )
+
+        if errors:
+            raise ValidationError(
+                errors
+            )
+
+    def save(self, *args, **kwargs):
+        if self.image:
+            if not self.original_name:
+                self.original_name = Path(
+                    self.image.name
+                ).name
+
+            try:
+                self.file_size = (
+                    self.image.size
+                )
+            except (AttributeError, OSError):
+                pass
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"{self.protocol} — "
+            f"{self.participation.student.full_name}"
+        )
 
 class AnswerSheet(models.Model):
     class Status(models.TextChoices):

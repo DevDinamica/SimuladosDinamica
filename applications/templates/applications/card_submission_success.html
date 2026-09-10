@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    Cartão recebido | Dinâmica Simulados
+{% endblock %}
+
+{% block extra_css %}
+    <link
+        rel="stylesheet"
+        href="{% static 'css/card_submission.css' %}"
+    >
+{% endblock %}
+
+{% block content %}
+<div class="card-upload-page">
+    <div class="submission-success">
+        <section class="success-card">
+            <header class="success-header">
+                <div class="success-icon">
+                    ✓
+                </div>
+
+                <h1>Cartão recebido!</h1>
+
+                <p>
+                    A fotografia foi enviada com segurança
+                    para a Editora Dinâmica.
+                </p>
+            </header>
+
+            <div class="success-content">
+                <div class="protocol-box">
+                    <span>
+                        Protocolo do envio
+                    </span>
+
+                    <strong>
+                        {{ submission.protocol }}
+                    </strong>
+                </div>
+
+                <div class="submission-summary">
+                    <div class="summary-item full">
+                        <span>Aluno</span>
+                        <strong>
+                            {{ submission.participation.student.full_name }}
+                        </strong>
+                    </div>
+
+                    <div class="summary-item">
+                        <span>Escola</span>
+                        <strong>
+                            {{ submission.participation.application_classroom.classroom.school.name }}
+                        </strong>
+                    </div>
+
+                    <div class="summary-item">
+                        <span>Turma</span>
+                        <strong>
+                            {{ submission.participation.application_classroom.classroom.grade.name }}
+                            {{ submission.participation.application_classroom.classroom.name }}
+                        </strong>
+                    </div>
+
+                    <div class="summary-item">
+                        <span>Aplicação</span>
+                        <strong>
+                            {{ portal.application.code }}
+                        </strong>
+                    </div>
+
+                    <div class="summary-item">
+                        <span>Situação</span>
+                        <strong>
+                            <span class="status-received">
+                                ✓
+                                {{ submission.get_status_display }}
+                            </span>
+                        </strong>
+                    </div>
+                </div>
+
+                <p class="success-guidance">
+                    Guarde o protocolo para conferência.
+                    A imagem seguirá para revisão e,
+                    futuramente, para leitura automática das
+                    marcações. Se precisar substituir uma foto,
+                    realize um novo envio para o mesmo aluno.
+                </p>
+
+                <div class="success-actions">
+                    <a
+                        class="success-button primary"
+                        href="{% url 'card_submission:detail' portal.token %}"
+                    >
+                        Enviar outro cartão
+                    </a>
+
+                    <a
+                        class="success-button secondary"
+                        href="/"
+                    >
+                        Voltar ao início
+                    </a>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

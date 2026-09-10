@@ -3,13 +3,22 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count
 from django import forms
 
+
 from .models import (
+    AnswerEntry,
+    AnswerSheet,
+    AnswerSheetBreakdown,
     ApplicationClassroom,
     Participation,
     SimulationApplication,
+    AnswerSheetImageSubmission,
+    CardSubmissionPortal,
 )
+
 from .services import generate_application_participations
 from data_portal.models import DataPreparationPortal
+
+from datetime import timedelta
 
 from django.urls import reverse
 from django.utils import timezone
@@ -22,14 +31,6 @@ from .correction import (
     validate_answer_sheet,
 )
 
-from .models import (
-    AnswerEntry,
-    AnswerSheet,
-    AnswerSheetBreakdown,
-    ApplicationClassroom,
-    Participation,
-    SimulationApplication,
-)
 
 class ApplicationClassroomInlineFormSet(
     forms.models.BaseInlineFormSet
@@ -1028,3 +1029,497 @@ class ParticipationAdmin(admin.ModelAdmin):
                 failure,
                 level=messages.ERROR,
             )
+
+@admin.register(CardSubmissionPortal)
+class CardSubmissionPortalAdmin(
+    admin.ModelAdmin
+):
+    list_display = (
+        "application",
+        "contact_name",
+        "portal_status",
+        "expires_at",
+        "submission_count_display",
+        "portal_link",
+    )
+    list_filter = (
+        "is_active",
+        "expires_at",
+        "application__status",
+    )
+    search_fields = (
+        "application__code",
+        "application__title",
+        "contact_name",
+        "contact_email",
+    )
+    readonly_fields = (
+        "token",
+        "portal_link",
+        "submission_count_display",
+        "created_at",
+        "updated_at",
+    )
+    list_select_related = (
+        "application",
+    )
+    actions = (
+        "activate_selected",
+        "deactivate_selected",
+        "extend_selected",
+    )
+
+    fieldsets = (
+        (
+            "Aplicação",
+            {
+                "fields": (
+                    "application",
+                    "contact_name",
+                    "contact_email",
+                ),
+            },
+        ),
+        (
+            "Acesso",
+            {
+                "fields": (
+                    "token",
+                    "portal_link",
+                    "expires_at",
+                    "is_active",
+                ),
+            },
+        ),
+        (
+            "Orientações",
+            {
+                "fields": (
+                    "instructions",
+                ),
+            },
+        ),
+        (
+            "Controle",
+            {
+                "fields": (
+                    "submission_count_display",
+                    "created_at",
+                    "updated_at",
+                ),
+            },
+        ),
+    )
+
+    @admin.display(
+        description="Situação",
+        boolean=True,
+    )
+    def portal_status(self, obj):
+        return obj.can_be_accessed
+
+    @admin.display(
+        description="Envios",
+    )
+    def submission_count_display(
+        self,
+        obj,
+    ):
+        return obj.submission_count
+
+    @admin.display(
+        description="Link do portal",
+    )
+    def portal_link(self, obj):
+        if not obj.pk:
+            return "Salve para gerar o link."
+
+        path = (
+            f"/cartoes/{obj.token}/"
+        )
+
+        return format_html(
+            (
+                '<a href="{}" target="_blank">'
+                "Abrir portal de envio"
+                "</a>"
+            ),
+            path,
+        )
+
+    @admin.action(
+        description=(
+            "Ativar portais selecionados"
+        ),
+    )
+    def activate_selected(
+        self,
+        request,
+        queryset,
+    ):
+        count = queryset.update(
+            is_active=True,
+        )
+
+        self.message_user(
+            request,
+            f"{count} portal(is) ativado(s).",
+        )
+
+    @admin.action(
+        description=(
+            "Desativar portais selecionados"
+        ),
+    )
+    def deactivate_selected(
+        self,
+        request,
+        queryset,
+    ):
+        count = queryset.update(
+            is_active=False,
+        )
+
+        self.message_user(
+            request,
+            f"{count} portal(is) desativado(s).",
+        )
+
+    @admin.action(
+        description=(
+            "Prorrogar validade por 30 dias"
+        ),
+    )
+    def extend_selected(
+        self,
+        request,
+        queryset,
+    ):
+        count = 0
+
+        for portal in queryset:
+            portal.expires_at = (
+                timezone.now()
+                + timedelta(days=30)
+            )
+            portal.is_active = True
+            portal.save(
+                update_fields=[
+                    "expires_at",
+                    "is_active",
+                    "updated_at",
+                ]
+            )
+            count += 1
+
+        self.message_user(
+            request,
+            (
+                f"A validade de {count} "
+                "portal(is) foi prorrogada."
+            ),
+        )
+
+@admin.register(
+    AnswerSheetImageSubmission
+)
+class AnswerSheetImageSubmissionAdmin(
+    admin.ModelAdmin
+):
+    list_display = (
+        "protocol_display",
+        "student_display",
+        "school_display",
+        "classroom_display",
+        "application_display",
+        "status",
+        "created_at",
+    )
+    list_filter = (
+        "status",
+        "portal__application",
+        (
+            "participation__"
+            "application_classroom__"
+            "classroom__school"
+        ),
+        (
+            "participation__"
+            "application_classroom__"
+            "classroom__grade"
+        ),
+        "created_at",
+    )
+    search_fields = (
+        "submission_code",
+        "participation__student__full_name",
+        (
+            "participation__student__"
+            "registration_code"
+        ),
+        "participation__card_code",
+        "portal__application__code",
+        (
+            "participation__"
+            "application_classroom__"
+            "classroom__school__name"
+        ),
+    )
+    readonly_fields = (
+        "submission_code",
+        "protocol_display",
+        "secure_image_preview",
+        "original_name",
+        "file_size_display",
+        "created_at",
+        "updated_at",
+    )
+    list_select_related = (
+        "portal",
+        "portal__application",
+        "participation",
+        "participation__student",
+        (
+            "participation__"
+            "application_classroom__"
+            "classroom"
+        ),
+        (
+            "participation__"
+            "application_classroom__"
+            "classroom__school"
+        ),
+    )
+    actions = (
+        "mark_under_review",
+        "mark_accepted",
+        "mark_rejected",
+    )
+
+    fieldsets = (
+        (
+            "Envio",
+            {
+                "fields": (
+                    "portal",
+                    "participation",
+                    "submission_code",
+                    "protocol_display",
+                    "secure_image_preview",
+                    "original_name",
+                    "file_size_display",
+                    "sender_name",
+                ),
+            },
+        ),
+        (
+            "Revisão",
+            {
+                "fields": (
+                    "status",
+                    "review_notes",
+                ),
+            },
+        ),
+        (
+            "Controle",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+            },
+        ),
+    )
+    
+    @admin.display(
+        description="Imagem do cartão-resposta",
+    )
+    def secure_image_preview(
+        self,
+        obj,
+    ):
+        if not obj.pk or not obj.image:
+            return "Nenhuma imagem enviada."
+
+        url = reverse(
+            "card_submission:secure_image",
+            kwargs={
+                "submission_code": (
+                    obj.submission_code
+                ),
+            },
+        )
+
+        return format_html(
+            (
+                '<a href="{}" target="_blank">'
+                '<img src="{}" alt="Cartão-resposta" '
+                'style="max-width: 420px; '
+                'max-height: 560px; '
+                'border-radius: 8px; '
+                'object-fit: contain;">'
+                "</a>"
+            ),
+            url,
+            url,
+        )
+
+    @admin.display(
+        description="Protocolo",
+    )
+    def protocol_display(
+        self,
+        obj,
+    ):
+        return obj.protocol
+
+    @admin.display(
+        description="Aluno",
+        ordering=(
+            "participation__"
+            "student__full_name"
+        ),
+    )
+    def student_display(
+        self,
+        obj,
+    ):
+        return (
+            obj.participation
+            .student
+            .full_name
+        )
+
+    @admin.display(
+        description="Escola",
+        ordering=(
+            "participation__"
+            "application_classroom__"
+            "classroom__school__name"
+        ),
+    )
+    def school_display(
+        self,
+        obj,
+    ):
+        return (
+            obj.participation
+            .application_classroom
+            .classroom
+            .school
+            .name
+        )
+
+    @admin.display(
+        description="Turma",
+    )
+    def classroom_display(
+        self,
+        obj,
+    ):
+        classroom = (
+            obj.participation
+            .application_classroom
+            .classroom
+        )
+
+        return (
+            f"{classroom.grade.name} "
+            f"{classroom.name}"
+        )
+
+    @admin.display(
+        description="Aplicação",
+        ordering=(
+            "portal__application__code"
+        ),
+    )
+    def application_display(
+        self,
+        obj,
+    ):
+        return (
+            obj.portal.application.code
+        )
+
+    @admin.display(
+        description="Tamanho",
+    )
+    def file_size_display(
+        self,
+        obj,
+    ):
+        if not obj.file_size:
+            return "—"
+
+        megabytes = (
+            obj.file_size
+            / 1024
+            / 1024
+        )
+
+        return f"{megabytes:.2f} MB"
+
+    @admin.action(
+        description="Marcar como em revisão",
+    )
+    def mark_under_review(
+        self,
+        request,
+        queryset,
+    ):
+        count = queryset.update(
+            status=(
+                AnswerSheetImageSubmission
+                .Status
+                .UNDER_REVIEW
+            )
+        )
+
+        self.message_user(
+            request,
+            f"{count} cartão(ões) em revisão.",
+        )
+
+    @admin.action(
+        description="Marcar como aceito",
+    )
+    def mark_accepted(
+        self,
+        request,
+        queryset,
+    ):
+        count = queryset.update(
+            status=(
+                AnswerSheetImageSubmission
+                .Status
+                .ACCEPTED
+            )
+        )
+
+        self.message_user(
+            request,
+            f"{count} cartão(ões) aceito(s).",
+        )
+
+    @admin.action(
+        description="Marcar como rejeitado",
+    )
+    def mark_rejected(
+        self,
+        request,
+        queryset,
+    ):
+        count = queryset.update(
+            status=(
+                AnswerSheetImageSubmission
+                .Status
+                .REJECTED
+            )
+        )
+
+        self.message_user(
+            request,
+            f"{count} cartão(ões) rejeitado(s).",
+        )

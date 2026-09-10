@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    Enviar cartão-resposta | Dinâmica Simulados
+{% endblock %}
+
+{% block extra_css %}
+    <link
+        rel="stylesheet"
+        href="{% static 'css/card_submission.css' %}"
+    >
+{% endblock %}
+
+{% block content %}
+<div class="card-upload-page">
+    <section class="card-upload-hero">
+        <div>
+            <p class="card-upload-eyebrow">
+                Envio seguro de cartões
+            </p>
+
+            <h1>
+                Fotografe e envie o
+                cartão-resposta.
+            </h1>
+
+            <p class="card-upload-subtitle">
+                Selecione a escola, a turma e o aluno.
+                Depois fotografe o cartão completo para
+                encaminhá-lo à Editora Dinâmica.
+            </p>
+        </div>
+
+        <div class="application-badge">
+            <span>Aplicação</span>
+            <strong>
+                {{ portal.application.code }}
+            </strong>
+
+            <span style="margin-top: 14px;">
+                Município
+            </span>
+            <strong>
+                {{ portal.application.municipality }}
+            </strong>
+        </div>
+    </section>
+
+    <div class="card-upload-layout">
+        <section class="card-upload-panel">
+            <form
+                id="card-submission-form"
+                method="post"
+                enctype="multipart/form-data"
+                data-classrooms-url="{% url 'card_submission:classrooms' portal.token %}"
+                data-students-url="{% url 'card_submission:students' portal.token %}"
+            >
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="form-errors">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <div class="upload-section">
+                    <div class="section-heading">
+                        <span class="section-number">
+                            1
+                        </span>
+
+                        <div>
+                            <h2>
+                                Identifique o aluno
+                            </h2>
+                            <p>
+                                As opções pertencem somente
+                                a esta aplicação.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="upload-fields">
+                        <div class="upload-field full">
+                            <label for="{{ form.school.id_for_label }}">
+                                Escola *
+                            </label>
+                            {{ form.school }}
+                            <div class="error-list">
+                                {{ form.school.errors }}
+                            </div>
+                        </div>
+
+                        <div class="upload-field">
+                            <label for="{{ form.application_classroom.id_for_label }}">
+                                Turma *
+                            </label>
+                            {{ form.application_classroom }}
+                            <div class="error-list">
+                                {{ form.application_classroom.errors }}
+                            </div>
+                        </div>
+
+                        <div class="upload-field">
+                            <label for="{{ form.participation.id_for_label }}">
+                                Aluno *
+                            </label>
+                            {{ form.participation }}
+                            <div class="error-list">
+                                {{ form.participation.errors }}
+                            </div>
+                        </div>
+
+                        <div class="upload-field full">
+                            <label for="{{ form.sender_name.id_for_label }}">
+                                Nome de quem está enviando
+                            </label>
+                            {{ form.sender_name }}
+                            <div class="error-list">
+                                {{ form.sender_name.errors }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="upload-section">
+                    <div class="section-heading">
+                        <span class="section-number">
+                            2
+                        </span>
+
+                        <div>
+                            <h2>
+                                Fotografe o cartão
+                            </h2>
+                            <p>
+                                Use a câmera traseira e mantenha
+                                os quatro marcadores visíveis.
+                            </p>
+                        </div>
+                    </div>
+
+                    <label
+                        id="photo-picker"
+                        class="photo-picker"
+                        for="{{ form.image.id_for_label }}"
+                    >
+                        {{ form.image }}
+
+                        <span class="photo-placeholder">
+                            <span class="camera-icon">
+                                📷
+                            </span>
+                            <strong>
+                                Abrir câmera ou escolher imagem
+                            </strong>
+                            <small>
+                                JPG, PNG ou WEBP, com no máximo
+                                12 MB.
+                            </small>
+                        </span>
+
+                        <img
+                            id="photo-preview"
+                            class="photo-preview"
+                            alt="Prévia do cartão selecionado"
+                        >
+                    </label>
+
+                    <p
+                        id="selected-file"
+                        class="selected-file"
+                    ></p>
+
+                    <div class="error-list">
+                        {{ form.image.errors }}
+                    </div>
+                </div>
+
+                <div class="privacy-notice">
+                    <span>🔒</span>
+                    <span>
+                        A fotografia será armazenada em área
+                        privada e vinculada somente à aplicação
+                        e ao aluno selecionado.
+                    </span>
+                </div>
+
+                <button
+                    id="submit-card-button"
+                    class="submit-card-button"
+                    type="submit"
+                >
+                    Enviar cartão-resposta
+                </button>
+            </form>
+        </section>
+
+        <aside class="card-upload-guide">
+            <h2>Antes de enviar</h2>
+
+            <ol class="guide-list">
+                <li>
+                    <span class="guide-check">1</span>
+                    <span>
+                        <strong>Abra o cartão</strong><br>
+                        Coloque-o sobre uma superfície plana.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="guide-check">2</span>
+                    <span>
+                        <strong>Evite sombras</strong><br>
+                        Use um ambiente bem iluminado.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="guide-check">3</span>
+                    <span>
+                        <strong>Mostre os cantos</strong><br>
+                        Não corte os marcadores pretos.
+                    </span>
+                </li>
+
+                <li>
+                    <span class="guide-check">4</span>
+                    <span>
+                        <strong>Confira a prévia</strong><br>
+                        Garanta que as respostas estejam legíveis.
+                    </span>
+                </li>
+            </ol>
+
+            <div class="guide-warning">
+                Se a fotografia ficar borrada, toque novamente
+                na imagem para escolher outra antes do envio.
+            </div>
+        </aside>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script
+        src="{% static 'js/card_submission.js' %}"
+    ></script>
+{% endblock %}

@@ -35,6 +35,12 @@ urlpatterns = [
         "data-portal/",
         include("data_portal.urls"),
     ),
+    path(
+        "cartoes/",
+        include(
+            "applications.card_submission_urls"
+        ),
+    ),
     path("admin/", admin.site.urls),
 ]
 
