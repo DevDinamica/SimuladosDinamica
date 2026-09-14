@@ -20,6 +20,7 @@ from applications.models import (
     ApplicationClassroom,
     CardSubmissionPortal,
     Participation,
+    ParticipationCard,
 )
 
 import mimetypes
@@ -70,6 +71,17 @@ def card_submission_detail(
     ):
         with transaction.atomic():
             submission = form.save()
+            
+            ParticipationCard.objects.filter(
+                pk=submission.participation_card_id,
+                status=(
+                    ParticipationCard.Status.EXPECTED
+                ),
+            ).update(
+                status=(
+                    ParticipationCard.Status.RECEIVED
+                ),
+            )
 
             Participation.objects.filter(
                 pk=submission.participation_id,
@@ -211,6 +223,62 @@ def student_options(
         "results": results,
     })
 
+@require_GET
+def card_options(
+    request,
+    token,
+):
+    portal = get_accessible_card_portal(
+        token
+    )
+
+    participation_id = request.GET.get(
+        "participation"
+    )
+
+    cards = (
+        ParticipationCard.objects
+        .filter(
+            participation_id=participation_id,
+            participation__application=(
+                portal.application
+            ),
+            application_assessment__is_active=True,
+        )
+        .exclude(
+            status=(
+                ParticipationCard.Status.CANCELLED
+            ),
+        )
+        .select_related(
+            "assessment_version",
+            "application_assessment",
+            "application_assessment__assessment",
+            (
+                "application_assessment__"
+                "assessment__subject"
+            ),
+        )
+        .order_by(
+            "application_assessment__order",
+        )
+    )
+
+    results = [
+        {
+            "id": card.pk,
+            "label": card.subject_name,
+            "version": (
+                card.assessment_version.code
+            ),
+            "code": card.short_card_code,
+        }
+        for card in cards
+    ]
+
+    return JsonResponse({
+        "results": results,
+    })
 
 def card_submission_success(
     request,
@@ -236,6 +304,21 @@ def card_submission_success(
                 "participation__"
                 "application_classroom__"
                 "classroom__school"
+            ),
+            "participation_card",
+            (
+                "participation_card__"
+                "assessment_version"
+            ),
+            (
+                "participation_card__"
+                "application_assessment__"
+                "assessment"
+            ),
+            (
+                "participation_card__"
+                "application_assessment__"
+                "assessment__subject"
             ),
         ),
         portal=portal,

@@ -8,8 +8,10 @@ from django.core.management.base import (
 from applications.answer_sheets import (
     generate_answer_sheets_pdf,
 )
+
 from applications.models import (
     Participation,
+    ParticipationCard,
     SimulationApplication,
 )
 
@@ -48,39 +50,80 @@ class Command(BaseCommand):
                 "Aplicação não encontrada."
             )
 
-        participations = (
-            application.participations.exclude(
-                status=Participation.Status.CANCELLED,
+        cards = (
+            ParticipationCard.objects
+            .filter(
+                participation__application=(
+                    application
+                ),
+                application_assessment__is_active=True,
+            )
+            .exclude(
+                participation__status=(
+                    Participation.Status.CANCELLED
+                ),
+            )
+            .exclude(
+                status=(
+                    ParticipationCard.Status.CANCELLED
+                ),
             )
             .select_related(
-                "application",
-                "application__municipality",
-                "student",
-                "assessment_version",
-                "application_classroom__classroom",
+                "participation",
+                "participation__application",
                 (
+                    "participation__"
+                    "application__municipality"
+                ),
+                "participation__student",
+                (
+                    "participation__"
+                    "application_classroom__classroom"
+                ),
+                (
+                    "participation__"
                     "application_classroom__"
                     "classroom__school"
                 ),
                 (
+                    "participation__"
                     "application_classroom__"
                     "classroom__grade"
                 ),
+                "application_assessment",
+                (
+                    "application_assessment__"
+                    "assessment"
+                ),
+                (
+                    "application_assessment__"
+                    "assessment__subject"
+                ),
+                "assessment_version",
             )
             .order_by(
-                "application_classroom__classroom__school__name",
-                "application_classroom__classroom__name",
-                "student__full_name",
+                (
+                    "participation__"
+                    "application_classroom__"
+                    "classroom__school__name"
+                ),
+                (
+                    "participation__"
+                    "application_classroom__"
+                    "classroom__name"
+                ),
+                "participation__student__full_name",
+                "application_assessment__order",
             )
         )
 
-        if not participations.exists():
+        if not cards.exists():
             raise CommandError(
-                "A aplicação não possui participações."
+                "A aplicação não possui cartões disciplinares."
             )
 
         pdf = generate_answer_sheets_pdf(
-            participations
+            cards
         )
 
         output_path.parent.mkdir(
@@ -94,7 +137,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{participations.count()} cartão(ões) "
+                f"{cards.count()} cartão(ões) "
                 f"gerado(s): {output_path}"
             )
         )

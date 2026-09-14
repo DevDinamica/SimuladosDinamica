@@ -36,9 +36,11 @@ from institutions.models import (
 
 from applications.models import (
     AnswerSheetImageSubmission,
+    ApplicationAssessment,
     ApplicationClassroom,
     CardSubmissionPortal,
     Participation,
+    ParticipationCard,
     SimulationApplication,
     validate_answer_sheet_image,
 )
@@ -205,6 +207,16 @@ class CardSubmissionPortalTest(
                 ),
             )
         )
+        
+        cls.application_assessment = (
+            ApplicationAssessment.objects.create(
+                application=cls.application,
+                assessment=cls.assessment,
+                order=1,
+                is_active=True,
+            )
+        )
+        
 
         cls.application_classroom = (
             ApplicationClassroom.objects.create(
@@ -222,6 +234,17 @@ class CardSubmissionPortalTest(
                 student=cls.student,
                 enrollment=cls.enrollment,
                 assessment_version=cls.version,
+            )
+        )
+        
+        cls.participation_card = (
+            ParticipationCard.objects.create(
+                participation=cls.participation,
+                application_assessment=(
+                    cls.application_assessment
+                ),
+                assessment_version=cls.version,
+                sequence_number=1,
             )
         )
 
@@ -258,6 +281,9 @@ class CardSubmissionPortalTest(
                 ),
                 "participation": (
                     self.participation.pk
+                ),
+                "participation_card": (
+                    self.participation_card.pk
                 ),
                 "sender_name": (
                     "Encarregado de Teste"
@@ -371,6 +397,42 @@ class CardSubmissionPortalTest(
             response.json()["results"][0]["label"],
             self.student.full_name,
         )
+        
+    def test_card_endpoint(self):
+        url = reverse(
+            "card_submission:cards",
+            kwargs={
+                "token": self.portal.token,
+            },
+        )
+
+        response = self.client.get(
+            url,
+            {
+                "participation": (
+                    self.participation.pk
+                ),
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+        self.assertEqual(
+            len(
+                response.json()["results"]
+            ),
+            1,
+        )
+        self.assertEqual(
+            response.json()["results"][0]["id"],
+            self.participation_card.pk,
+        )
+        self.assertEqual(
+            response.json()["results"][0]["label"],
+            self.subject.name,
+        )
 
     def test_successful_upload(self):
         response = self.post_submission()
@@ -399,6 +461,10 @@ class CardSubmissionPortalTest(
         self.assertEqual(
             submission.participation,
             self.participation,
+        )
+        self.assertEqual(
+            submission.participation_card,
+            self.participation_card,
         )
         self.assertEqual(
             submission.sender_name,
@@ -431,6 +497,18 @@ class CardSubmissionPortalTest(
                 Participation.Status
                 .ANSWER_SHEET_RECEIVED
             ),
+        )
+    
+    def test_upload_marks_selected_card_received(
+        self,
+    ):
+        self.post_submission()
+
+        self.participation_card.refresh_from_db()
+
+        self.assertEqual(
+            self.participation_card.status,
+            ParticipationCard.Status.RECEIVED,
         )
 
     def test_processed_participation_is_preserved(

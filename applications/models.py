@@ -952,6 +952,14 @@ class AnswerSheetImageSubmission(models.Model):
         on_delete=models.PROTECT,
         related_name="image_submissions",
     )
+    participation_card = models.ForeignKey(
+        ParticipationCard,
+        verbose_name="cartão disciplinar",
+        on_delete=models.PROTECT,
+        related_name="image_submissions",
+        null=True,
+        blank=True,
+    )
     submission_code = models.UUIDField(
         "código do envio",
         default=uuid.uuid4,
@@ -1063,6 +1071,42 @@ class AnswerSheetImageSubmission(models.Model):
             errors["participation"] = (
                 "Não é possível enviar cartão para "
                 "participação ausente ou cancelada."
+            )
+        
+        if (
+            self.participation_card_id
+            and self.participation_id
+            and self.participation_card.participation_id
+            != self.participation_id
+        ):
+            errors["participation_card"] = (
+                "O cartão selecionado não pertence "
+                "ao aluno informado."
+            )
+
+        if (
+            self.participation_card_id
+            and self.portal_id
+            and (
+                self.participation_card
+                .participation
+                .application_id
+                != self.portal.application_id
+            )
+        ):
+            errors["participation_card"] = (
+                "O cartão não pertence à aplicação "
+                "deste portal."
+            )
+
+        if (
+            self.participation_card_id
+            and self.participation_card.status
+            == ParticipationCard.Status.CANCELLED
+        ):
+            errors["participation_card"] = (
+                "Não é possível enviar uma imagem "
+                "para um cartão cancelado."
             )
 
         if errors:

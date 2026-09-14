@@ -13,9 +13,11 @@ from .models import (
     SimulationApplication,
     AnswerSheetImageSubmission,
     CardSubmissionPortal,
+    ApplicationAssessment,
+    ParticipationCard,
 )
 
-from .services import generate_application_participations
+from .services import (ensure_primary_application_assessment, generate_application_participations,)
 from data_portal.models import DataPreparationPortal
 
 from datetime import timedelta
@@ -96,6 +98,23 @@ class ApplicationClassroomInlineFormSet(
                 )
 
 
+class ApplicationAssessmentInline(
+    admin.TabularInline
+):
+    model = ApplicationAssessment
+    extra = 0
+    fields = (
+        "assessment",
+        "order",
+        "is_active",
+    )
+    autocomplete_fields = (
+        "assessment",
+    )
+    ordering = (
+        "order",
+    )
+
 class ApplicationClassroomInline(admin.TabularInline):
     model = ApplicationClassroom
     formset = ApplicationClassroomInlineFormSet
@@ -159,6 +178,7 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
         "participant_count_display",
     )
     inlines = (
+        ApplicationAssessmentInline,
         ApplicationClassroomInline,
     )
     date_hierarchy = "application_date"
@@ -226,6 +246,21 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
             .select_related(
                 "assessment",
                 "municipality",
+                "participation_card",
+                (
+                    "participation_card__"
+                    "assessment_version"
+                ),
+                (
+                    "participation_card__"
+                    "application_assessment__"
+                    "assessment"
+                ),
+                (
+                    "participation_card__"
+                    "application_assessment__"
+                    "assessment__subject"
+                ),
             )
             .annotate(
                 classroom_total_annotation=Count(
@@ -386,6 +421,120 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
             f"{updated} aplicação(ões) marcada(s) como pronta(s).",
         )
 
+    def save_model(
+        self,
+        request,
+        obj,
+        form,
+        change,
+    ):
+        super().save_model(
+            request,
+            obj,
+            form,
+            change,
+        )
+
+        ensure_primary_application_assessment(
+            obj
+        )
+
+@admin.register(ApplicationAssessment)
+class ApplicationAssessmentAdmin(
+    admin.ModelAdmin
+):
+    list_display = (
+        "application",
+        "assessment",
+        "subject_display",
+        "order",
+        "is_active",
+    )
+    list_filter = (
+        "is_active",
+        "assessment__subject",
+        "assessment__academic_year",
+    )
+    search_fields = (
+        "application__code",
+        "application__title",
+        "assessment__code",
+        "assessment__title",
+    )
+    autocomplete_fields = (
+        "application",
+        "assessment",
+    )
+
+    @admin.display(description="Disciplina")
+    def subject_display(self, obj):
+        return obj.subject_name
+
+
+@admin.register(ParticipationCard)
+class ParticipationCardAdmin(
+    admin.ModelAdmin
+):
+    list_display = (
+        "sequence_number",
+        "student_display",
+        "application_display",
+        "subject_display",
+        "assessment_version",
+        "short_code_display",
+        "status",
+    )
+    list_filter = (
+        "status",
+        "application_assessment__application",
+        (
+            "application_assessment__"
+            "assessment__subject"
+        ),
+        "assessment_version",
+    )
+    search_fields = (
+        "participation__student__full_name",
+        (
+            "participation__student__"
+            "registration_code"
+        ),
+        (
+            "application_assessment__"
+            "application__code"
+        ),
+        "card_code",
+    )
+    autocomplete_fields = (
+        "participation",
+        "application_assessment",
+        "assessment_version",
+    )
+    readonly_fields = (
+        "card_code",
+        "short_code_display",
+        "created_at",
+        "updated_at",
+    )
+
+    @admin.display(description="Aluno")
+    def student_display(self, obj):
+        return obj.participation.student
+
+    @admin.display(description="Aplicação")
+    def application_display(self, obj):
+        return (
+            obj.application_assessment
+            .application
+        )
+
+    @admin.display(description="Disciplina")
+    def subject_display(self, obj):
+        return obj.subject_name
+
+    @admin.display(description="Código curto")
+    def short_code_display(self, obj):
+        return obj.short_card_code
 
 @admin.register(ApplicationClassroom)
 class ApplicationClassroomAdmin(admin.ModelAdmin):
@@ -1229,6 +1378,8 @@ class AnswerSheetImageSubmissionAdmin(
     list_display = (
         "protocol_display",
         "student_display",
+        "subject_display",
+        "version_display",
         "school_display",
         "classroom_display",
         "application_display",
@@ -1248,6 +1399,15 @@ class AnswerSheetImageSubmissionAdmin(
             "application_classroom__"
             "classroom__grade"
         ),
+        (
+            "participation_card__"
+            "application_assessment__"
+            "assessment__subject"
+        ),
+        (
+            "participation_card__"
+            "assessment_version"
+        ),
         "created_at",
     )
     search_fields = (
@@ -1263,6 +1423,12 @@ class AnswerSheetImageSubmissionAdmin(
             "participation__"
             "application_classroom__"
             "classroom__school__name"
+        ),
+        "participation_card__card_code",
+        (
+            "participation_card__"
+            "application_assessment__"
+            "assessment__title"
         ),
     )
     readonly_fields = (
@@ -1442,6 +1608,40 @@ class AnswerSheetImageSubmissionAdmin(
         return (
             obj.portal.application.code
         )
+        
+    @admin.display(
+        description="Disciplina",
+        ordering=(
+            "participation_card__"
+            "application_assessment__"
+            "assessment__subject__name"
+        ),
+    )
+    def subject_display(self, obj):
+        if not obj.participation_card_id:
+            return "Envio legado"
+
+        return (
+            obj.participation_card
+            .subject_name
+        )
+
+    @admin.display(
+        description="Versão",
+        ordering=(
+            "participation_card__"
+            "assessment_version__code"
+        ),
+    )
+    def version_display(self, obj):
+        if not obj.participation_card_id:
+            return "-"
+
+        return (
+            obj.participation_card
+            .assessment_version
+            .code
+        )
 
     @admin.display(
         description="Tamanho",
@@ -1522,4 +1722,16 @@ class AnswerSheetImageSubmissionAdmin(
         self.message_user(
             request,
             f"{count} cartão(ões) rejeitado(s).",
+        )
+    def __str__(self):
+        subject = (
+            self.participation_card.subject_name
+            if self.participation_card_id
+            else "Envio legado"
+        )
+
+        return (
+            f"{self.protocol} — "
+            f"{self.participation.student.full_name} — "
+            f"{subject}"
         )

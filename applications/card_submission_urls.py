@@ -32,6 +32,11 @@ urlpatterns = [
         name="students",
     ),
     path(
+        "<uuid:token>/cartoes/",
+        views.card_options,
+        name="cards",
+    ),
+    path(
         (
             "<uuid:token>/sucesso/"
             "<uuid:submission_code>/"

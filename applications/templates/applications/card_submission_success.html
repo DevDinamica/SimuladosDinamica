@@ -81,12 +81,30 @@
                     </div>
                 </div>
 
+                <div class="summary-item">
+                    <span>Disciplina</span>
+                    <strong>
+                        {{ submission.participation_card.subject_name }}
+                    </strong>
+                </div>
+
+                <div class="summary-item">
+                    <span>Versão e cartão</span>
+                    <strong>
+                        Versão
+                        {{ submission.participation_card.assessment_version.code }}
+                        —
+                        {{ submission.participation_card.short_card_code }}
+                    </strong>
+                </div>
+
                 <p class="success-guidance">
                     Guarde o protocolo para conferência.
                     A imagem seguirá para revisão e,
                     futuramente, para leitura automática das
                     marcações. Se precisar substituir uma foto,
-                    realize um novo envio para o mesmo aluno.
+                    realize um novo envio para o mesmo aluno
+                    e para a mesma disciplina.
                 </p>
 
                 <div class="success-actions">

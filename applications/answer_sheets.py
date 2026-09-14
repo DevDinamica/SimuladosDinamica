@@ -67,9 +67,67 @@ def shorten(value, maximum=58):
 
     return f"{value[: maximum - 3]}..."
 
+class AnswerSheetCardContext:
+    def __init__(self, source):
+        is_discipline_card = hasattr(
+            source,
+            "application_assessment_id",
+        )
 
-def build_qr_image(participation):
-    payload = f"DS1:{participation.card_code}"
+        if is_discipline_card:
+            self.participation = (
+                source.participation
+            )
+            self.assessment_version = (
+                source.assessment_version
+            )
+            self.card_code = source.card_code
+            self.sequence_number = (
+                source.sequence_number
+            )
+            self.short_card_code = (
+                source.short_card_code
+            )
+            self.subject_name = (
+                source.subject_name
+            )
+            self.assessment_title = (
+                source.application_assessment
+                .assessment
+                .title
+            )
+            self.qr_prefix = "DS2"
+            
+        else:
+            self.participation = source
+            self.assessment_version = (
+                source.assessment_version
+            )
+            self.card_code = source.card_code
+            self.sequence_number = (
+                source.sequence_number
+            )
+            self.short_card_code = (
+                source.short_card_code
+            )
+            self.subject_name = (
+                source.assessment_version
+                .assessment
+                .subject_names
+            )
+            self.qr_prefix = "DS1"
+
+    def __getattr__(self, name):
+        return getattr(
+            self.participation,
+            name,
+        )
+
+def build_qr_image(card):
+    payload = (
+        f"{card.qr_prefix}:"
+        f"{card.card_code}"
+    )
 
     qr = qrcode.QRCode(
         version=None,
@@ -164,7 +222,10 @@ def draw_header(pdf, participation):
     pdf.drawString(
         23 * mm,
         page_height - 38 * mm,
-        shorten(application.title, 65),
+        shorten(
+            participation.assessment_title,
+            65,
+        ),
     )
 
     qr_image, _ = build_qr_image(participation)
@@ -210,8 +271,11 @@ def draw_header(pdf, participation):
             shorten(classroom, 22),
         ),
         (
-            "MUNICÍPIO",
-            shorten(application.municipality, 35),
+            "DISCIPLINA",
+            shorten(
+                participation.subject_name,
+                35,
+            ),
             "TURNO",
             classroom.get_shift_display(),
         ),
@@ -511,12 +575,17 @@ def draw_answer_sheet(
 def generate_answer_sheets_pdf(participations):
     register_fonts()
 
-    participations = list(participations)
+    sources = list(participations)
 
-    if not participations:
+    if not sources:
         raise ValidationError(
-            "Nenhuma participação foi selecionada."
+            "Nenhum cartão foi selecionado."
         )
+
+    cards = [
+        AnswerSheetCardContext(source)
+        for source in sources
+    ]
 
     output = BytesIO()
 
@@ -530,13 +599,13 @@ def generate_answer_sheets_pdf(participations):
     )
     pdf.setAuthor("Editora Dinâmica")
 
-    for page_number, participation in enumerate(
-        participations,
+    for page_number, card in enumerate(
+        cards,
         start=1,
     ):
         draw_answer_sheet(
             pdf,
-            participation,
+            card,
             page_number,
         )
 
@@ -545,7 +614,7 @@ def generate_answer_sheets_pdf(participations):
 
     reader = PdfReader(output)
 
-    if len(reader.pages) != len(participations):
+    if len(reader.pages) != len(cards):
         raise ValidationError(
             "A quantidade de páginas gerada não corresponde "
             "à quantidade de participantes."

@@ -26,7 +26,7 @@
             </h1>
 
             <p class="card-upload-subtitle">
-                Selecione a escola, a turma e o aluno.
+                Selecione a escola, a turma, o aluno e a disciplina.
                 Depois fotografe o cartão completo para
                 encaminhá-lo à Editora Dinâmica.
             </p>
@@ -55,6 +55,7 @@
                 enctype="multipart/form-data"
                 data-classrooms-url="{% url 'card_submission:classrooms' portal.token %}"
                 data-students-url="{% url 'card_submission:students' portal.token %}"
+                data-cards-url="{% url 'card_submission:cards' portal.token %}"
             >
                 {% csrf_token %}
 
@@ -80,6 +81,8 @@
                             </p>
                         </div>
                     </div>
+
+                    
 
                     <div class="upload-fields">
                         <div class="upload-field full">
@@ -111,6 +114,16 @@
                                 {{ form.participation.errors }}
                             </div>
                         </div>
+
+                        <div class="upload-field full">
+                        <label for="{{ form.participation_card.id_for_label }}">
+                            Disciplina *
+                        </label>
+                        {{ form.participation_card }}
+                        <div class="error-list">
+                            {{ form.participation_card.errors }}
+                        </div>
+                    </div>
 
                         <div class="upload-field full">
                             <label for="{{ form.sender_name.id_for_label }}">
@@ -182,8 +195,8 @@
                     <span>🔒</span>
                     <span>
                         A fotografia será armazenada em área
-                        privada e vinculada somente à aplicação
-                        e ao aluno selecionado.
+                        privada e vinculada somente à aplicação,
+                        ao aluno e à disciplina selecionados.
                     </span>
                 </div>
 

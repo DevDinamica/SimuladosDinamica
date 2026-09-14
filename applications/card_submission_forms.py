@@ -5,9 +5,20 @@ from applications.models import (
     AnswerSheetImageSubmission,
     ApplicationClassroom,
     Participation,
+    ParticipationCard,
 )
 
-
+class ParticipationCardChoiceField(
+    forms.ModelChoiceField
+):
+    def label_from_instance(self, card):
+        return (
+            f"{card.subject_name} — "
+            f"Versão {card.assessment_version.code} — "
+            f"Código {card.short_card_code}"
+        )
+        
+        
 class CardSubmissionForm(
     forms.ModelForm
 ):
@@ -42,6 +53,17 @@ class CardSubmissionForm(
             ),
         )
     )
+    participation_card = (
+        ParticipationCardChoiceField(
+            label="Disciplina",
+            queryset=(
+                ParticipationCard.objects.none()
+            ),
+            empty_label=(
+                "Selecione primeiro o aluno"
+            ),
+        )
+    )
 
     class Meta:
         model = AnswerSheetImageSubmission
@@ -49,6 +71,7 @@ class CardSubmissionForm(
             "school",
             "application_classroom",
             "participation",
+            "participation_card",
             "sender_name",
             "image",
         )
@@ -114,6 +137,46 @@ class CardSubmissionForm(
             .distinct()
             .order_by("name")
         )
+        
+        participation_id = self.data.get(
+            "participation"
+        )
+
+        if participation_id:
+            self.fields[
+                "participation_card"
+            ].queryset = (
+                ParticipationCard.objects
+                .filter(
+                    participation_id=(
+                        participation_id
+                    ),
+                    participation__application=(
+                        application
+                    ),
+                    application_assessment__is_active=True,
+                )
+                .exclude(
+                    status=(
+                        ParticipationCard.Status.CANCELLED
+                    ),
+                )
+                .select_related(
+                    "assessment_version",
+                    "application_assessment",
+                    (
+                        "application_assessment__"
+                        "assessment"
+                    ),
+                    (
+                        "application_assessment__"
+                        "assessment__subject"
+                    ),
+                )
+                .order_by(
+                    "application_assessment__order",
+                )
+            )
 
         school_id = self.data.get(
             "school"
@@ -185,6 +248,11 @@ class CardSubmissionForm(
         participation = cleaned_data.get(
             "participation"
         )
+        participation_card = (
+            cleaned_data.get(
+                "participation_card"
+            )
+        )
 
         if (
             school
@@ -226,6 +294,37 @@ class CardSubmissionForm(
                 "participation",
                 (
                     "O aluno não pertence a "
+                    "esta aplicação."
+                ),
+            )
+        
+        if (
+            participation
+            and participation_card
+            and participation_card.participation_id
+            != participation.pk
+        ):
+            self.add_error(
+                "participation_card",
+                (
+                    "O cartão selecionado não "
+                    "pertence ao aluno."
+                ),
+            )
+
+        if (
+            participation_card
+            and (
+                participation_card
+                .participation
+                .application_id
+                != self.portal.application_id
+            )
+        ):
+            self.add_error(
+                "participation_card",
+                (
+                    "O cartão não pertence a "
                     "esta aplicação."
                 ),
             )

@@ -16,6 +16,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const student = document.querySelector(
         "#id_participation"
     );
+    const card = document.querySelector(
+        "#id_participation_card"
+    );
     const imageInput = document.querySelector(
         "#id_image"
     );
@@ -36,6 +39,8 @@ document.addEventListener("DOMContentLoaded", () => {
         form.dataset.classroomsUrl;
     const studentUrl =
         form.dataset.studentsUrl;
+    const cardUrl =
+        form.dataset.cardsUrl;
 
     function resetSelect(
         select,
@@ -87,6 +92,11 @@ document.addEventListener("DOMContentLoaded", () => {
             student,
             "Selecione primeiro a turma"
         );
+        resetSelect(
+            card,
+            "Selecione primeiro o aluno"
+        );
+        card.disabled = true;
 
         classroom.disabled = true;
         student.disabled = true;
@@ -137,6 +147,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadStudents() {
         resetSelect(
+            card,
+            "Selecione primeiro o aluno"
+        );
+        card.disabled = true;
+        resetSelect(
             student,
             "Carregando alunos..."
         );
@@ -185,6 +200,73 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+        async function loadCards() {
+        resetSelect(
+            card,
+            "Carregando disciplinas..."
+        );
+        card.disabled = true;
+
+        if (!student.value) {
+            resetSelect(
+                card,
+                "Selecione primeiro o aluno"
+            );
+            return;
+        }
+
+        const url = new URL(
+            cardUrl,
+            window.location.origin
+        );
+
+        url.searchParams.set(
+            "participation",
+            student.value
+        );
+
+        try {
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(
+                    "Não foi possível carregar."
+                );
+            }
+
+            const data = await response.json();
+
+            resetSelect(
+                card,
+                "Selecione a disciplina"
+            );
+
+            for (const result of data.results) {
+                const option = (
+                    document.createElement(
+                        "option"
+                    )
+                );
+
+                option.value = result.id;
+                option.textContent = (
+                    `${result.label} — ` +
+                    `Versão ${result.version} — ` +
+                    `Código ${result.code}`
+                );
+
+                card.appendChild(option);
+            }
+        } catch (error) {
+            resetSelect(
+                card,
+                "Erro ao carregar disciplinas"
+            );
+        } finally {
+            card.disabled = false;
+        }
+    }
+
     school.addEventListener(
         "change",
         loadClassrooms
@@ -193,6 +275,11 @@ document.addEventListener("DOMContentLoaded", () => {
     classroom.addEventListener(
         "change",
         loadStudents
+    );
+
+    student.addEventListener(
+        "change",
+        loadCards
     );
 
     imageInput.addEventListener(
