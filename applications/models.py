@@ -262,6 +262,106 @@ class SimulationApplication(models.Model):
         return f"{self.code or 'Nova aplicação'} — {self.title}"
 
 
+class ApplicationAssessment(models.Model):
+    application = models.ForeignKey(
+        SimulationApplication,
+        verbose_name="aplicação",
+        on_delete=models.CASCADE,
+        related_name="application_assessments",
+    )
+    assessment = models.ForeignKey(
+        Assessment,
+        verbose_name="prova",
+        on_delete=models.PROTECT,
+        related_name="application_links",
+    )
+    order = models.PositiveSmallIntegerField(
+        "ordem",
+        default=1,
+    )
+    is_active = models.BooleanField(
+        "ativa",
+        default=True,
+    )
+    created_at = models.DateTimeField(
+        "adicionada em",
+        auto_now_add=True,
+    )
+
+    class Meta:
+        verbose_name = "prova da aplicação"
+        verbose_name_plural = "provas da aplicação"
+        ordering = [
+            "application",
+            "order",
+            "assessment__title",
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "application",
+                    "assessment",
+                ],
+                name="unique_assessment_by_application",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "application",
+                    "order",
+                ],
+                name="unique_assessment_order_by_app",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=[
+                    "application",
+                    "is_active",
+                ],
+                name="app_assessment_active_idx",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+
+        if (
+            self.assessment_id
+            and self.assessment.status
+            != Assessment.Status.PUBLISHED
+        ):
+            errors["assessment"] = (
+                "A prova precisa estar publicada."
+            )
+
+        if (
+            self.assessment_id
+            and self.application_id
+            and self.assessment.academic_year_id
+            != self.application.assessment.academic_year_id
+        ):
+            errors["assessment"] = (
+                "Todas as provas da aplicação devem "
+                "pertencer ao mesmo ano letivo."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def subject_name(self):
+        return self.assessment.subject_names
+
+    def __str__(self):
+        return (
+            f"{self.application.code} — "
+            f"{self.assessment.title}"
+        )
+
 class ApplicationClassroom(models.Model):
     application = models.ForeignKey(
         SimulationApplication,
@@ -545,6 +645,187 @@ class Participation(models.Model):
         return (
             f"{self.application.code} — "
             f"{self.student.full_name} — "
+            f"Versão {self.assessment_version.code}"
+        )
+
+class ParticipationCard(models.Model):
+    class Status(models.TextChoices):
+        EXPECTED = (
+            "EXPECTED",
+            "Aguardando cartão",
+        )
+        RECEIVED = (
+            "RECEIVED",
+            "Cartão recebido",
+        )
+        PROCESSED = (
+            "PROCESSED",
+            "Processado",
+        )
+        CANCELLED = (
+            "CANCELLED",
+            "Cancelado",
+        )
+
+    participation = models.ForeignKey(
+        Participation,
+        verbose_name="participação",
+        on_delete=models.CASCADE,
+        related_name="discipline_cards",
+    )
+    application_assessment = models.ForeignKey(
+        ApplicationAssessment,
+        verbose_name="prova da aplicação",
+        on_delete=models.PROTECT,
+        related_name="participation_cards",
+    )
+    assessment_version = models.ForeignKey(
+        AssessmentVersion,
+        verbose_name="versão da prova",
+        on_delete=models.PROTECT,
+        related_name="participation_cards",
+    )
+    card_code = models.UUIDField(
+        "código seguro do cartão",
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+    )
+    sequence_number = models.PositiveIntegerField(
+        "número sequencial",
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        "situação",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.EXPECTED,
+    )
+    created_at = models.DateTimeField(
+        "criado em",
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        "atualizado em",
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = "cartão disciplinar"
+        verbose_name_plural = "cartões disciplinares"
+        ordering = [
+            "participation",
+            "application_assessment__order",
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "participation",
+                    "application_assessment",
+                ],
+                name="unique_card_by_participation_assessment",
+            ),
+            models.UniqueConstraint(
+                fields=[
+                    "application_assessment",
+                    "sequence_number",
+                ],
+                name="unique_card_sequence_by_assessment",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["card_code"],
+                name="part_card_code_idx",
+            ),
+            models.Index(
+                fields=[
+                    "application_assessment",
+                    "status",
+                ],
+                name="part_card_status_idx",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+
+        if (
+            self.participation_id
+            and self.application_assessment_id
+            and self.participation.application_id
+            != self.application_assessment.application_id
+        ):
+            errors["application_assessment"] = (
+                "A prova não pertence à aplicação "
+                "desta participação."
+            )
+
+        if (
+            self.assessment_version_id
+            and self.application_assessment_id
+            and self.assessment_version.assessment_id
+            != self.application_assessment.assessment_id
+        ):
+            errors["assessment_version"] = (
+                "A versão não pertence à prova selecionada."
+            )
+
+        if (
+            self.assessment_version_id
+            and not self.assessment_version.is_active
+        ):
+            errors["assessment_version"] = (
+                "A versão selecionada não está ativa."
+            )
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if (
+            not self.sequence_number
+            and self.application_assessment_id
+        ):
+            last_sequence = (
+                ParticipationCard.objects.filter(
+                    application_assessment_id=(
+                        self.application_assessment_id
+                    ),
+                )
+                .order_by("-sequence_number")
+                .values_list(
+                    "sequence_number",
+                    flat=True,
+                )
+                .first()
+                or 0
+            )
+
+            self.sequence_number = last_sequence + 1
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    @property
+    def short_card_code(self):
+        return str(
+            self.card_code
+        ).split("-")[0].upper()
+
+    @property
+    def subject_name(self):
+        return (
+            self.application_assessment
+            .assessment
+            .subject_names
+        )
+
+    def __str__(self):
+        return (
+            f"{self.participation.student.full_name} — "
+            f"{self.subject_name} — "
             f"Versão {self.assessment_version.code}"
         )
 
