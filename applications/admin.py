@@ -3,7 +3,6 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count
 from django import forms
 
-
 from .models import (
     AnswerEntry,
     AnswerSheet,
@@ -29,6 +28,7 @@ from django.utils.html import format_html
 from .correction import (
     initialize_answer_sheet,
     process_answer_sheet,
+    refresh_participation_status,
     reopen_answer_sheet,
     validate_answer_sheet,
 )
@@ -686,6 +686,7 @@ class AnswerSheetAdmin(admin.ModelAdmin):
         "sequence_display",
         "student_display",
         "application_display",
+        "subject_display",
         "version_display",
         "status",
         "correct_count",
@@ -698,21 +699,32 @@ class AnswerSheetAdmin(admin.ModelAdmin):
     list_filter = (
         "status",
         "input_method",
-        "participation__application",
+        (
+            "participation_card__"
+            "application_assessment__application"
+        ),
         (
             "participation__application_classroom__"
             "classroom__school"
         ),
-        "participation__assessment_version",
+        (
+            "participation_card__"
+            "application_assessment__assessment__subject"
+        ),
+        "participation_card__assessment_version",
     )
     search_fields = (
         "participation__student__full_name",
         "participation__student__registration_code",
-        "participation__application__code",
-        "participation__card_code",
+        (
+            "participation_card__"
+            "application_assessment__application__code"
+        ),
+        "participation_card__card_code",
     )
     readonly_fields = (
         "participation",
+        "participation_card",
         "status",
         "input_method",
         "student_summary",
@@ -742,6 +754,7 @@ class AnswerSheetAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "participation",
+                    "participation_card",
                     "student_summary",
                     "application_summary",
                     "version_summary",
@@ -802,7 +815,24 @@ class AnswerSheetAdmin(admin.ModelAdmin):
         "participation",
         "participation__student",
         "participation__application",
-        "participation__assessment_version",
+        "participation_card",
+        (
+            "participation_card__"
+            "application_assessment"
+        ),
+        (
+            "participation_card__"
+            "application_assessment__application"
+        ),
+        (
+            "participation_card__"
+            "application_assessment__assessment"
+        ),
+        (
+            "participation_card__"
+            "application_assessment__assessment__subject"
+        ),
+        "participation_card__assessment_version",
     )
     save_on_top = True
 
@@ -811,7 +841,11 @@ class AnswerSheetAdmin(admin.ModelAdmin):
 
     @admin.display(description="Nº")
     def sequence_display(self, obj):
-        return obj.participation.sequence_number
+        return obj.participation_card.sequence_number
+    
+    @admin.display(description="Disciplina")
+    def subject_display(self, obj):
+        return obj.participation_card.subject_name
 
     @admin.display(description="Aluno")
     def student_display(self, obj):
@@ -823,7 +857,11 @@ class AnswerSheetAdmin(admin.ModelAdmin):
 
     @admin.display(description="Versão")
     def version_display(self, obj):
-        return obj.participation.assessment_version.code
+        return (
+            obj.participation_card
+            .assessment_version
+            .code
+        )
 
     @admin.display(description="Percentual")
     def percentage_display(self, obj):
@@ -845,11 +883,14 @@ class AnswerSheetAdmin(admin.ModelAdmin):
 
     @admin.display(description="Versão da prova")
     def version_summary(self, obj):
-        version = obj.participation.assessment_version
+        card = obj.participation_card
+        version = card.assessment_version
 
         return (
+            f"{card.subject_name} — "
             f"Versão {version.code} — "
-            f"{version.question_count} questões"
+            f"{version.question_count} questões — "
+            f"Código {card.short_card_code}"
         )
 
     def save_formset(
@@ -905,14 +946,26 @@ class AnswerSheetAdmin(admin.ModelAdmin):
             updated_at=now,
         )
 
-        Participation.objects.filter(
-            pk=answer_sheet.participation_id,
-        ).update(
-            status=(
-                Participation.Status
-                .ANSWER_SHEET_RECEIVED
-            ),
-            updated_at=now,
+        participation_card = (
+            answer_sheet.participation_card
+        )
+
+        if (
+            participation_card.status
+            != ParticipationCard.Status.RECEIVED
+        ):
+            participation_card.status = (
+                ParticipationCard.Status.RECEIVED
+            )
+            participation_card.save(
+                update_fields=[
+                    "status",
+                    "updated_at",
+                ]
+            )
+
+        refresh_participation_status(
+            answer_sheet.participation
         )
 
     @admin.action(
@@ -1040,7 +1093,7 @@ class ParticipationAdmin(admin.ModelAdmin):
         "assessment_version",
         "short_code_display",
         "status",
-        "answer_sheet_display",
+        "answer_sheets_display",
     )
     list_filter = (
         "status",
@@ -1106,22 +1159,23 @@ class ParticipationAdmin(admin.ModelAdmin):
             f"{updated} aluno(s) marcado(s) como ausente(s).",
         )
 
-    @admin.display(description="Lançamento")
-    def answer_sheet_display(self, obj):
-        try:
-            answer_sheet = obj.answer_sheet
-        except AnswerSheet.DoesNotExist:
-            return "Não iniciado"
-
-        url = reverse(
-            "admin:applications_answersheet_change",
-            args=[answer_sheet.pk],
+    @admin.display(description="Lançamentos")
+    def answer_sheets_display(self, obj):
+        cards = obj.discipline_cards.exclude(
+            status=ParticipationCard.Status.CANCELLED,
         )
 
-        return format_html(
-            '<a href="{}">{}</a>',
-            url,
-            answer_sheet.get_status_display(),
+        total = cards.count()
+        initialized = cards.filter(
+            answer_sheet__isnull=False,
+        ).count()
+        processed = cards.filter(
+            status=ParticipationCard.Status.PROCESSED,
+        ).count()
+
+        return (
+            f"{initialized}/{total} iniciados — "
+            f"{processed}/{total} processados"
         )
 
     @admin.action(
@@ -1139,28 +1193,58 @@ class ParticipationAdmin(admin.ModelAdmin):
         queryset = queryset.select_related(
             "application",
             "student",
-            "assessment_version",
+        ).prefetch_related(
+            "discipline_cards",
+            (
+                "discipline_cards__"
+                "application_assessment"
+            ),
+            (
+                "discipline_cards__"
+                "application_assessment__assessment"
+            ),
+            (
+                "discipline_cards__"
+                "assessment_version"
+            ),
         )
 
         for participation in queryset:
-            try:
-                _, created = initialize_answer_sheet(
-                    participation,
-                    user=request.user,
+            cards = (
+                participation.discipline_cards
+                .exclude(
+                    status=(
+                        ParticipationCard.Status.CANCELLED
+                    ),
                 )
+                .filter(
+                    application_assessment__is_active=True,
+                )
+                .order_by(
+                    "application_assessment__order",
+                    "pk",
+                )
+            )
 
-                if created:
-                    created_count += 1
-                else:
-                    existing_count += 1
-
-            except ValidationError as error:
-                failures.append(
-                    (
-                        f"{participation}: "
-                        f"{'; '.join(error.messages)}"
+            for participation_card in cards:
+                try:
+                    _, created = initialize_answer_sheet(
+                        participation_card,
+                        user=request.user,
                     )
-                )
+
+                    if created:
+                        created_count += 1
+                    else:
+                        existing_count += 1
+
+                except ValidationError as error:
+                    failures.append(
+                        (
+                            f"{participation_card}: "
+                            f"{'; '.join(error.messages)}"
+                        )
+                    )
 
         if created_count or existing_count:
             self.message_user(

@@ -1153,10 +1153,16 @@ class AnswerSheet(models.Model):
         CAMERA = "CAMERA", "Leitura pela câmera"
         IMPORT = "IMPORT", "Importação"
 
-    participation = models.OneToOneField(
+    participation = models.ForeignKey(
         Participation,
         verbose_name="participação",
         on_delete=models.CASCADE,
+        related_name="answer_sheets",
+    )
+    participation_card = models.OneToOneField(
+        ParticipationCard,
+        verbose_name="cartão disciplinar",
+        on_delete=models.PROTECT,
         related_name="answer_sheet",
     )
     status = models.CharField(
@@ -1305,8 +1311,9 @@ class AnswerSheet(models.Model):
 
     def __str__(self):
         return (
-            f"{self.participation.application.code} — "
-            f"{self.participation.student.full_name}"
+            f"{self.participation.student.full_name} — "
+            f"{self.participation_card.subject_name} — "
+            f"{self.get_status_display()}"
         )
 
 class AnswerEntry(models.Model):

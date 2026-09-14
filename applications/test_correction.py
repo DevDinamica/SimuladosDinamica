@@ -29,8 +29,10 @@ from applications.models import (
     AnswerEntry,
     AnswerSheet,
     AnswerSheetBreakdown,
+    ApplicationAssessment,
     ApplicationClassroom,
     Participation,
+    ParticipationCard,
     SimulationApplication,
 )
 
@@ -184,7 +186,16 @@ class CorrectionServiceTest(TestCase):
             application_date=date(2026, 9, 10),
             status=SimulationApplication.Status.READY,
         )
-
+        
+        cls.application_assessment = (
+            ApplicationAssessment.objects.create(
+                application=cls.application,
+                assessment=cls.assessment,
+                order=1,
+                is_active=True,
+            )
+        )
+        
         cls.application_classroom = (
             ApplicationClassroom.objects.create(
                 application=cls.application,
@@ -192,7 +203,7 @@ class CorrectionServiceTest(TestCase):
                 room_name="Sala 01",
             )
         )
-
+        
         cls.participation = Participation.objects.create(
             application=cls.application,
             application_classroom=cls.application_classroom,
@@ -200,10 +211,38 @@ class CorrectionServiceTest(TestCase):
             enrollment=cls.enrollment,
             assessment_version=cls.version,
         )
+        
+        cls.participation_card = (
+            ParticipationCard.objects.create(
+                participation=cls.participation,
+                application_assessment=(
+                    cls.application_assessment
+                ),
+                assessment_version=cls.version,
+                card_code=cls.participation.card_code,
+                sequence_number=(
+                    cls.participation.sequence_number
+                ),
+                status=(
+                    ParticipationCard.Status.EXPECTED
+                ),
+            )
+        )
 
     def get_participation(self):
         return Participation.objects.get(
             pk=self.participation.pk
+        )
+        
+    def get_participation_card(self):
+        return (
+            ParticipationCard.objects
+            .select_related(
+                "participation",
+                "application_assessment",
+                "assessment_version",
+            )
+            .get(pk=self.participation_card.pk)
         )
 
     def get_admin_request(self):
@@ -216,7 +255,7 @@ class CorrectionServiceTest(TestCase):
 
     def initialize(self):
         return initialize_answer_sheet(
-            self.get_participation()
+            self.get_participation_card()
         )[0]
 
     def get_answers(self, answer_sheet):
@@ -238,7 +277,16 @@ class CorrectionServiceTest(TestCase):
 
     def test_initialization_creates_sheet_and_answers(self):
         answer_sheet, created = initialize_answer_sheet(
-            self.get_participation()
+            self.get_participation_card()
+        )
+        
+        self.assertEqual(
+            answer_sheet.participation_card,
+            self.participation_card,
+        )
+        self.assertEqual(
+            answer_sheet.participation,
+            self.participation,
         )
 
         self.assertTrue(created)
@@ -260,12 +308,12 @@ class CorrectionServiceTest(TestCase):
     def test_initialization_is_idempotent(self):
         first_sheet, first_created = (
             initialize_answer_sheet(
-                self.get_participation()
+                self.get_participation_card()
             )
         )
         second_sheet, second_created = (
             initialize_answer_sheet(
-                self.get_participation()
+                self.get_participation_card()
             )
         )
 
@@ -274,6 +322,15 @@ class CorrectionServiceTest(TestCase):
         self.assertEqual(first_sheet.pk, second_sheet.pk)
         self.assertEqual(AnswerSheet.objects.count(), 1)
         self.assertEqual(AnswerEntry.objects.count(), 4)
+        
+        self.assertEqual(
+            AnswerSheet.objects.filter(
+                participation_card=(
+                    self.participation_card
+                ),
+            ).count(),
+            1,
+        )
 
     def test_blank_sheet_is_processed(self):
         answer_sheet = process_answer_sheet(
@@ -408,7 +465,7 @@ class CorrectionServiceTest(TestCase):
             "espera 4 questões",
         ):
             initialize_answer_sheet(
-                self.get_participation()
+                self.get_participation_card()
             )
 
         self.assertFalse(

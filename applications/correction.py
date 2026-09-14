@@ -10,6 +10,7 @@ from .models import (
     AnswerSheet,
     AnswerSheetBreakdown,
     Participation,
+    ParticipationCard,
 )
 
 
@@ -44,33 +45,134 @@ def validate_participation(participation):
             "cancelada."
         )
 
+def refresh_participation_status(
+    participation,
+):
+    cards = participation.discipline_cards.exclude(
+        status=ParticipationCard.Status.CANCELLED,
+    )
+
+    if not cards.exists():
+        return participation.status
+
+    if not cards.exclude(
+        status=ParticipationCard.Status.PROCESSED,
+    ).exists():
+        new_status = Participation.Status.PROCESSED
+
+    elif cards.filter(
+        status__in=[
+            ParticipationCard.Status.RECEIVED,
+            ParticipationCard.Status.PROCESSED,
+        ],
+    ).exists():
+        new_status = (
+            Participation.Status.ANSWER_SHEET_RECEIVED
+        )
+
+    else:
+        return participation.status
+
+    if participation.status != new_status:
+        participation.status = new_status
+        participation.save(
+            update_fields=[
+                "status",
+                "updated_at",
+            ]
+        )
+
+    return new_status
+
+
+def update_participation_card_status(
+    participation_card,
+    status,
+):
+    if participation_card.status != status:
+        participation_card.status = status
+        participation_card.save(
+            update_fields=[
+                "status",
+                "updated_at",
+            ]
+        )
+
+    refresh_participation_status(
+        participation_card.participation
+    )
 
 @transaction.atomic
 def initialize_answer_sheet(
-    participation,
+    participation_card,
     user=None,
 ):
-    participation = (
-        Participation.objects.select_for_update()
+    if isinstance(
+        participation_card,
+        Participation,
+    ):
+        participation = participation_card
+
+        participation_card = (
+            participation.discipline_cards.filter(
+                assessment_version_id=(
+                    participation.assessment_version_id
+                ),
+            )
+            .order_by(
+                "application_assessment__order",
+                "pk",
+            )
+            .first()
+        )
+
+        if participation_card is None:
+            raise ValidationError(
+                "A participação não possui cartão "
+                "disciplinar compatível."
+            )
+
+    participation_card = (
+        ParticipationCard.objects
+        .select_for_update(
+            of=("self",),
+        )
         .select_related(
-            "application",
-            "student",
+            "participation",
+            "participation__application",
+            "participation__student",
+            "application_assessment",
+            "application_assessment__assessment",
             "assessment_version",
         )
+        .get(pk=participation_card.pk)
+    )
+
+    participation = participation_card.participation
+
+    participation = (
+        Participation.objects.select_for_update()
         .get(pk=participation.pk)
     )
 
     validate_participation(participation)
 
-    version = participation.assessment_version
+    if (
+        participation_card.status
+        == ParticipationCard.Status.CANCELLED
+    ):
+        raise ValidationError(
+            "Não é possível lançar respostas para "
+            "um cartão cancelado."
+        )
+
+    version = participation_card.assessment_version
 
     questions = list(
         version.questions.filter(
             is_active=True,
         )
-        .select_related(
-            "component",
-        )
+        .select_related("component")
         .order_by("number")
     )
 
@@ -86,8 +188,9 @@ def initialize_answer_sheet(
     answer_sheet, created = (
         AnswerSheet.objects.select_for_update()
         .get_or_create(
-            participation=participation,
+            participation_card=participation_card,
             defaults={
+                "participation": participation,
                 "status": AnswerSheet.Status.DRAFT,
                 "input_method": (
                     AnswerSheet.InputMethod.MANUAL
@@ -97,6 +200,15 @@ def initialize_answer_sheet(
             },
         )
     )
+
+    if (
+        answer_sheet.participation_id
+        != participation.pk
+    ):
+        raise ValidationError(
+            "O lançamento está vinculado a uma "
+            "participação incompatível."
+        )
 
     if answer_sheet.status == AnswerSheet.Status.PROCESSED:
         raise ValidationError(
@@ -343,15 +455,24 @@ def process_answer_sheet(
         .select_related(
             "participation",
             "participation__application",
-            "participation__assessment_version",
+            "participation_card",
+            "participation_card__assessment_version",
+            (
+                "participation_card__"
+                "application_assessment"
+            ),
         )
         .get(pk=answer_sheet.pk)
     )
 
     participation = answer_sheet.participation
+    participation_card = (
+        answer_sheet.participation_card
+    )
+
     validate_participation(participation)
 
-    version = participation.assessment_version
+    version = participation_card.assessment_version
 
     questions = list(
         version.questions.filter(
@@ -556,12 +677,9 @@ def process_answer_sheet(
         total_score=version.total_score,
     )
 
-    participation.status = Participation.Status.PROCESSED
-    participation.save(
-        update_fields=[
-            "status",
-            "updated_at",
-        ]
+    update_participation_card_status(
+        participation_card,
+        ParticipationCard.Status.PROCESSED,
     )
 
     return answer_sheet
@@ -576,15 +694,20 @@ def validate_answer_sheet(
         AnswerSheet.objects.select_for_update()
         .select_related(
             "participation",
-            "participation__assessment_version",
+            "participation_card",
+            "participation_card__assessment_version",
         )
         .get(pk=answer_sheet.pk)
     )
 
     participation = answer_sheet.participation
+    participation_card = (
+        answer_sheet.participation_card
+    )
+
     validate_participation(participation)
 
-    version = participation.assessment_version
+    version = participation_card.assessment_version
 
     questions = list(
         version.questions.filter(
@@ -662,14 +785,9 @@ def validate_answer_sheet(
         ]
     )
 
-    participation.status = (
-        Participation.Status.ANSWER_SHEET_RECEIVED
-    )
-    participation.save(
-        update_fields=[
-            "status",
-            "updated_at",
-        ]
+    update_participation_card_status(
+        participation_card,
+        ParticipationCard.Status.RECEIVED,
     )
 
     return answer_sheet
@@ -683,6 +801,7 @@ def reopen_answer_sheet(
         AnswerSheet.objects.select_for_update()
         .select_related(
             "participation",
+            "participation_card",
         )
         .get(pk=answer_sheet.pk)
     )
@@ -734,15 +853,9 @@ def reopen_answer_sheet(
         ]
     )
 
-    participation = answer_sheet.participation
-    participation.status = (
-        Participation.Status.ANSWER_SHEET_RECEIVED
-    )
-    participation.save(
-        update_fields=[
-            "status",
-            "updated_at",
-        ]
+    update_participation_card_status(
+        answer_sheet.participation_card,
+        ParticipationCard.Status.RECEIVED,
     )
 
     return answer_sheet
