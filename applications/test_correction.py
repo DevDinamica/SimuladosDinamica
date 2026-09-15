@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
-
+from django.urls import reverse
 from academics.models import (
     AcademicYear,
     Classroom,
@@ -980,5 +980,24 @@ class CorrectionServiceTest(TestCase):
         self.assertIn(
             "mark_as_ready",
             actions,
+        )
+        
+    def test_application_admin_changelist_loads(self):
+        self.client.force_login(
+            self.admin_user
+        )
+
+        response = self.client.get(
+            reverse(
+                (
+                    "admin:applications_"
+                    "simulationapplication_changelist"
+                )
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
         )
 

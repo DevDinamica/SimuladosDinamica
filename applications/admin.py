@@ -244,23 +244,10 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
             super()
             .get_queryset(request)
             .select_related(
+                "simulation_request",
                 "assessment",
                 "municipality",
-                "participation_card",
-                (
-                    "participation_card__"
-                    "assessment_version"
-                ),
-                (
-                    "participation_card__"
-                    "application_assessment__"
-                    "assessment"
-                ),
-                (
-                    "participation_card__"
-                    "application_assessment__"
-                    "assessment__subject"
-                ),
+                "coordinator",
             )
             .annotate(
                 classroom_total_annotation=Count(
