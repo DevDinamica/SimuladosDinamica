@@ -16,7 +16,10 @@ from .models import (
     ParticipationCard,
 )
 
-from .services import (ensure_primary_application_assessment, generate_application_participations,)
+from .services import (
+    ensure_primary_application_assessment,
+    generate_application_participations,
+)
 from data_portal.models import DataPreparationPortal
 
 from datetime import timedelta
@@ -408,22 +411,22 @@ class SimulationApplicationAdmin(admin.ModelAdmin):
             f"{updated} aplicação(ões) marcada(s) como pronta(s).",
         )
 
-    def save_model(
+    def save_related(
         self,
         request,
-        obj,
         form,
+        formsets,
         change,
     ):
-        super().save_model(
+        super().save_related(
             request,
-            obj,
             form,
+            formsets,
             change,
         )
 
         ensure_primary_application_assessment(
-            obj
+            form.instance
         )
 
 @admin.register(ApplicationAssessment)
