@@ -8,7 +8,7 @@
 {% block extra_css %}
     <link
         rel="stylesheet"
-        href="{% static 'css/card_submission.css' %}?v=20260915-1"
+        href="{% static 'css/card_submission.css' %}?v=20260916-1"
     >
 {% endblock %}
 
@@ -26,9 +26,9 @@
             </h1>
 
             <p class="card-upload-subtitle">
-                Selecione a escola, a turma, o aluno e a disciplina.
-                Depois fotografe o cartão completo para
-                encaminhá-lo à Editora Dinâmica.
+                Selecione a escola, a turma e o aluno.
+                Depois fotografe os cartões de Língua Portuguesa
+                e Matemática na mesma tela.
             </p>
         </div>
 
@@ -116,16 +116,6 @@
                         </div>
 
                         <div class="upload-field full">
-                        <label for="{{ form.participation_card.id_for_label }}">
-                            Disciplina *
-                        </label>
-                        {{ form.participation_card }}
-                        <div class="error-list">
-                            {{ form.participation_card.errors }}
-                        </div>
-                    </div>
-
-                        <div class="upload-field full">
                             <label for="{{ form.sender_name.id_for_label }}">
                                 Nome de quem está enviando
                             </label>
@@ -145,50 +135,45 @@
 
                         <div>
                             <h2>
-                                Fotografe o cartão
+                                Fotografe os cartões
                             </h2>
+
                             <p>
-                                Use a câmera traseira e mantenha
-                                os quatro marcadores visíveis.
+                                Você pode enviar uma ou as duas
+                                disciplinas. Cada fotografia receberá
+                                um protocolo independente.
                             </p>
                         </div>
                     </div>
 
-                    <label
-                        id="photo-picker"
-                        class="photo-picker"
-                        for="{{ form.image.id_for_label }}"
+                    <div
+                        id="discipline-upload-list"
+                        class="discipline-upload-list"
+                        aria-live="polite"
                     >
-                        {{ form.image }}
-
-                        <span class="photo-placeholder">
-                            <span class="camera-icon">
-                                📷
-                            </span>
-                            <strong>
-                                Abrir câmera ou escolher imagem
-                            </strong>
-                            <small>
-                                JPG, PNG ou WEBP, com no máximo
-                                12 MB.
-                            </small>
-                        </span>
-
-                        <img
-                            id="photo-preview"
-                            class="photo-preview"
-                            alt="Prévia do cartão selecionado"
-                        >
-                    </label>
-
-                    <p
-                        id="selected-file"
-                        class="selected-file"
-                    ></p>
-
-                    <div class="error-list">
-                        {{ form.image.errors }}
+                        <div class="discipline-empty-state">
+                            Selecione primeiro o aluno para
+                            carregar os cartões disponíveis.
+                        </div>
                     </div>
+
+                    {% if form.image.errors %}
+                        <div class="form-errors">
+                            {{ form.image.errors }}
+                        </div>
+                    {% endif %}
+
+                    {% if form.participation_card.errors %}
+                        <div class="form-errors">
+                            {{ form.participation_card.errors }}
+                        </div>
+                    {% endif %}
+
+                    <div
+                        id="submission-general-error"
+                        class="submission-general-error"
+                        role="alert"
+                    ></div>
                 </div>
 
                 <div class="privacy-notice">
@@ -205,7 +190,7 @@
                     class="submit-card-button"
                     type="submit"
                 >
-                    Enviar cartão-resposta
+                    Enviar cartões selecionados
                 </button>
             </form>
         </section>
@@ -258,6 +243,6 @@
 
 {% block extra_js %}
     <script
-        src="{% static 'js/card_submission.js' %}?v=20260915-1"
+        src="{% static 'js/card_submission.js' %}?v=20260916-1"
     ></script>
 {% endblock %}

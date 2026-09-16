@@ -6,6 +6,11 @@ from applications.models import (
     ApplicationClassroom,
     Participation,
     ParticipationCard,
+    validate_answer_sheet_image,
+)
+
+from django.core.validators import (
+    FileExtensionValidator,
 )
 
 class ParticipationCardChoiceField(
@@ -123,6 +128,22 @@ class CardSubmissionForm(
 
         self.portal = portal
         application = portal.application
+        
+        self.fields["image"].validators = [
+            FileExtensionValidator(
+                allowed_extensions=[
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "webp",
+                ],
+                message=(
+                    "Envie uma imagem JPG, "
+                    "PNG ou WEBP."
+                ),
+            ),
+            validate_answer_sheet_image,
+        ]
 
         self.fields[
             "school"

@@ -143,6 +143,13 @@ class CardSubmissionPortalTest(
         cls.subject = Subject.objects.get(
             code="MAT",
         )
+        
+        cls.portuguese_subject = (
+            Subject.objects.create(
+                name="Língua Portuguesa Portal",
+                code="LP-PORTAL",
+            )
+        )
 
         cls.classroom = Classroom.objects.create(
             school=cls.school,
@@ -152,7 +159,8 @@ class CardSubmissionPortalTest(
             shift=Classroom.Shift.MORNING,
         )
         cls.classroom.subjects.add(
-            cls.subject
+            cls.subject,
+            cls.portuguese_subject,
         )
 
         cls.student = Student.objects.create(
@@ -189,6 +197,40 @@ class CardSubmissionPortalTest(
                 total_score=Decimal("10.00"),
             )
         )
+        
+        cls.portuguese_assessment = (
+            Assessment.objects.create(
+                title=(
+                    "Avaliação Portuguesa "
+                    "Portal Cartões"
+                ),
+                code=(
+                    "AVALIACAO-PORTUGUES-"
+                    "PORTAL-2027"
+                ),
+                academic_year=cls.academic_year,
+                subject=cls.portuguese_subject,
+                status=Assessment.Status.PUBLISHED,
+            )
+        )
+        
+        
+
+        cls.portuguese_assessment.grades.add(
+            cls.grade
+        )
+
+        cls.portuguese_version = (
+            AssessmentVersion.objects.create(
+                assessment=(
+                    cls.portuguese_assessment
+                ),
+                code="A",
+                question_count=1,
+                option_count=4,
+                total_score=Decimal("10.00"),
+            )
+        )
 
         cls.application = (
             SimulationApplication.objects.create(
@@ -217,7 +259,17 @@ class CardSubmissionPortalTest(
             )
         )
         
-
+        cls.portuguese_application_assessment = (
+            ApplicationAssessment.objects.create(
+                application=cls.application,
+                assessment=(
+                    cls.portuguese_assessment
+                ),
+                order=2,
+                is_active=True,
+            )
+        )     
+        
         cls.application_classroom = (
             ApplicationClassroom.objects.create(
                 application=cls.application,
@@ -244,6 +296,19 @@ class CardSubmissionPortalTest(
                     cls.application_assessment
                 ),
                 assessment_version=cls.version,
+                sequence_number=1,
+            )
+        )
+        
+        cls.portuguese_card = (
+            ParticipationCard.objects.create(
+                participation=cls.participation,
+                application_assessment=(
+                    cls.portuguese_application_assessment
+                ),
+                assessment_version=(
+                    cls.portuguese_version
+                ),
                 sequence_number=1,
             )
         )
@@ -423,7 +488,7 @@ class CardSubmissionPortalTest(
             len(
                 response.json()["results"]
             ),
-            1,
+            2,
         )
         self.assertEqual(
             response.json()["results"][0]["id"],
@@ -484,7 +549,7 @@ class CardSubmissionPortalTest(
             file_path.exists()
         )
 
-    def test_upload_marks_participation_received(
+    def test_first_card_keeps_participation_present(
         self,
     ):
         self.post_submission()
@@ -493,10 +558,7 @@ class CardSubmissionPortalTest(
 
         self.assertEqual(
             self.participation.status,
-            (
-                Participation.Status
-                .ANSWER_SHEET_RECEIVED
-            ),
+            Participation.Status.PRESENT,
         )
     
     def test_upload_marks_selected_card_received(
@@ -578,9 +640,18 @@ class CardSubmissionPortalTest(
             .count(),
             0,
         )
-        self.assertContains(
-            response,
+        form = response.context["form"]
+
+        self.assertIn(
+            "image",
+            form.errors,
+        )
+
+        self.assertIn(
             "JPG, PNG ou WEBP",
+            " ".join(
+                form.errors["image"]
+            ),
         )
 
     def test_oversized_file_is_rejected(self):
@@ -701,4 +772,206 @@ class CardSubmissionPortalTest(
                 "X-Content-Type-Options"
             ],
             "nosniff",
+        )
+    
+    def post_json_submission(
+        self,
+        image=None,
+        participation_card=None,
+    ):
+        return self.client.post(
+            self.detail_url(),
+            data={
+                "school": self.school.pk,
+                "application_classroom": (
+                    self.application_classroom.pk
+                ),
+                "participation": (
+                    self.participation.pk
+                ),
+                "participation_card": (
+                    participation_card.pk
+                    if participation_card
+                    else self.participation_card.pk
+                ),
+                "sender_name": (
+                    "Encarregado de Teste"
+                ),
+                "image": (
+                    image
+                    or uploaded_image()
+                ),
+            },
+            HTTP_X_REQUESTED_WITH=(
+                "XMLHttpRequest"
+            ),
+        )
+
+    def test_json_upload_returns_protocol(
+        self,
+    ):
+        response = self.post_json_submission()
+
+        self.assertEqual(
+            response.status_code,
+            201,
+        )
+        self.assertTrue(
+            response.json()["success"]
+        )
+        self.assertTrue(
+            response.json()["protocol"]
+            .startswith("ENV-")
+        )
+        self.assertEqual(
+            response.json()["card"]["id"],
+            self.participation_card.pk,
+        )
+
+    def test_duplicate_upload_is_rejected(
+        self,
+    ):
+        first_response = (
+            self.post_json_submission()
+        )
+        second_response = (
+            self.post_json_submission(
+                uploaded_image(
+                    "segunda-foto.png"
+                )
+            )
+        )
+
+        self.assertEqual(
+            first_response.status_code,
+            201,
+        )
+        self.assertEqual(
+            second_response.status_code,
+            409,
+        )
+        self.assertTrue(
+            second_response.json()[
+                "duplicate"
+            ]
+        )
+        self.assertEqual(
+            AnswerSheetImageSubmission
+            .objects
+            .count(),
+            1,
+        )
+
+    def test_rejected_submission_can_be_sent_again(
+        self,
+    ):
+        first_response = (
+            self.post_json_submission()
+        )
+
+        self.assertEqual(
+            first_response.status_code,
+            201,
+        )
+
+        submission = (
+            AnswerSheetImageSubmission
+            .objects
+            .get()
+        )
+        submission.status = (
+            AnswerSheetImageSubmission
+            .Status
+            .REJECTED
+        )
+        submission.save(
+            update_fields=[
+                "status",
+                "updated_at",
+            ]
+        )
+
+        second_response = (
+            self.post_json_submission(
+                uploaded_image(
+                    "reenvio.png"
+                )
+            )
+        )
+
+        self.assertEqual(
+            second_response.status_code,
+            201,
+        )
+        self.assertEqual(
+            AnswerSheetImageSubmission
+            .objects
+            .count(),
+            2,
+        )
+
+    def test_invalid_ajax_upload_returns_errors(
+        self,
+    ):
+        response = (
+            self.post_json_submission(
+                uploaded_image(
+                    "cartao.txt"
+                )
+            )
+        )
+
+        self.assertEqual(
+            response.status_code,
+            422,
+        )
+        self.assertFalse(
+            response.json()["success"]
+        )
+        self.assertIn(
+            "image",
+            response.json()["errors"],
+        )
+        
+    def test_second_card_completes_participation(
+        self,
+    ):
+        first_response = (
+            self.post_json_submission()
+        )
+
+        second_response = (
+            self.post_json_submission(
+                image=uploaded_image(
+                    "portugues.png"
+                ),
+                participation_card=(
+                    self.portuguese_card
+                ),
+            )
+        )
+
+        self.assertEqual(
+            first_response.status_code,
+            201,
+        )
+        self.assertEqual(
+            second_response.status_code,
+            201,
+        )
+
+        self.participation.refresh_from_db()
+
+        self.assertEqual(
+            self.participation.status,
+            (
+                Participation.Status
+                .ANSWER_SHEET_RECEIVED
+            ),
+        )
+
+        self.assertTrue(
+            second_response.json()[
+                "participation_complete"
+            ]
         )
